@@ -261,7 +261,7 @@ class ModelOverfitTest(unittest.TestCase):
         train_args = transformers.TrainingArguments(
             output_dir=self.output_dir,
             do_train=True,
-            num_train_epochs=70,
+            num_train_epochs=100,
             seed=42,
         )
 
