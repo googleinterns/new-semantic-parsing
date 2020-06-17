@@ -67,6 +67,10 @@ def parse_args(args=None):
     parser.add_argument('--seed', default=1, type=int)
     parser.add_argument('--lr', default=None, type=float,
                         help='By default, lr is chosen according to the Scaling Laws for Neural Language Models')
+    parser.add_argument('--encoder-lr', default=None, type=float,
+                        help='Encoder learning rate, overrides --lr')
+    parser.add_argument('--decoder-lr', default=None, type=float,
+                        help='Decoder learning rate, overrides --lr')
     parser.add_argument('--weight-decay', default=0, type=float)
     parser.add_argument('--warmup-steps', default=0, type=int)
     parser.add_argument('--gradient-accumulation-steps', default=1, type=int)
@@ -77,6 +81,9 @@ def parse_args(args=None):
 
 if __name__ == '__main__':
     args = parse_args()
+
+    if (args.encoder_lr is not None) ^ (args.decoder_lr is not None):
+        raise ValueError('--encoder-lr and --decoder-lr should be both specified')
 
     data_dir = Path(args.data_dir)
 
@@ -135,6 +142,9 @@ if __name__ == '__main__':
 
     logger.info('Starting training')
     lr = args.lr or utils.get_lr(model)
+
+    if args.encoder_lr is not None and args.decoder_lr is not None:
+        lr = {'encoder_lr': args.encoder_lr, 'decoder_lr': args.decoder_lr}
 
     if args.output_dir is None:
         args.output_dir = os.path.join('output_dir', next(tempfile._get_candidate_names()))
