@@ -46,6 +46,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         )
         encoder = transformers.BertModel(encoder_config)
 
+        # decoder accepts vocabulary of schema vocab + pointer embeddings
         decoder_config = transformers.BertConfig(
             hidden_size=11,
             intermediate_size=44,
@@ -56,7 +57,9 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder)
+        # logits are projected into schema vocab and combined with pointer scores
+        max_pointer = src_len + 3
+        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer=max_pointer)
 
         x_enc = torch.randint(0, encoder_config.vocab_size, size=(bs, src_len))
         x_dec = torch.randint(0, decoder_config.vocab_size, size=(bs, tgt_len))
@@ -67,8 +70,10 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         # e.g. BERT returns two, but DistillBERT only one
         self.assertGreaterEqual(len(out), 4)
 
+        schema_vocab = decoder_config.vocab_size - max_pointer
+
         combined_logits = out[0]
-        expected_shape = (bs, tgt_len, decoder_config.vocab_size - encoder_config.vocab_size + src_len)
+        expected_shape = (bs, tgt_len, schema_vocab + src_len)
         self.assertEqual(combined_logits.shape, expected_shape)
 
         decoder_hidden = out[1]
@@ -87,6 +92,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         torch.manual_seed(42)
         src_vocab_size = 17
         tgt_vocab_size = 23
+        max_position = 5
 
         encoder_config = transformers.BertConfig(
             hidden_size=11,
@@ -100,14 +106,14 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         decoder_config = transformers.BertConfig(
             hidden_size=11,
             intermediate_size=44,
-            vocab_size=tgt_vocab_size + src_vocab_size,
+            vocab_size=tgt_vocab_size + max_position,
             is_decoder=True,
             num_hidden_layers=1,
             num_attention_heads=1,
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder)
+        model = EncoderDecoderWPointerModel(encoder, decoder, max_position)
 
         # similar to real data
         # e.g. '[CLS] Directions to Lowell [SEP]'
@@ -127,6 +133,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         torch.manual_seed(42)
         src_vocab_size = 17
         tgt_vocab_size = 23
+        max_position = 7
 
         encoder_config = transformers.BertConfig(
             hidden_size=11,
@@ -140,14 +147,14 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         decoder_config = transformers.BertConfig(
             hidden_size=11,
             intermediate_size=44,
-            vocab_size=tgt_vocab_size + src_vocab_size,
+            vocab_size=tgt_vocab_size + max_position,
             is_decoder=True,
             num_hidden_layers=1,
             num_attention_heads=1,
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder)
+        model = EncoderDecoderWPointerModel(encoder, decoder, max_position)
 
         # similar to real data
         src_seq = torch.LongTensor([[1, 6, 12, 15, 2, 0, 0],
@@ -178,17 +185,18 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         )
         encoder = transformers.BertModel(encoder_config)
 
+        max_position = 7
         decoder_config = transformers.BertConfig(
             hidden_size=11,
             intermediate_size=44,
-            vocab_size=tgt_vocab_size + src_vocab_size,
+            vocab_size=tgt_vocab_size + max_position,
             is_decoder=True,
             num_hidden_layers=1,
             num_attention_heads=1,
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder)
+        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer=7)
 
         # similar to real data
         src_seq = torch.LongTensor([[1, 6, 12, 15, 2, 0, 0],
@@ -222,18 +230,13 @@ class ModelOverfitTest(unittest.TestCase):
         random.seed(42)
         torch.manual_seed(42)
         np.random.seed(42)
-        # NOTE: test takes about ~10 seconds
+        # NOTE: slow test
 
         tokenizer = transformers.AutoTokenizer.from_pretrained('distilbert-base-uncased')
 
         vocab = {'[', ']', 'IN:', 'SL:', 'GET_DIRECTIONS', 'DESTINATION',
                  'DATE_TIME_DEPARTURE', 'GET_ESTIMATED_ARRIVAL'}
         schema_tokenizer = TopSchemaTokenizer(vocab, tokenizer)
-
-        model = EncoderDecoderWPointerModel.from_parameters(
-            layers=3, hidden=128, heads=2,
-            src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
-        )
 
         source_texts = [
             'Directions to Lowell',
@@ -258,11 +261,19 @@ class ModelOverfitTest(unittest.TestCase):
         dataset = PointerDataset(source_ids, schema_ids, source_pointer_masks, schema_pointer_masks)
         dataset.torchify()
 
+        src_maxlen, _ = dataset.get_max_len()
+
+        model = EncoderDecoderWPointerModel.from_parameters(
+            layers=3, hidden=128, heads=2, maximal_pointer=src_maxlen,
+            src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
+        )
+
         train_args = transformers.TrainingArguments(
             output_dir=self.output_dir,
             do_train=True,
-            num_train_epochs=100,
+            num_train_epochs=30,
             seed=42,
+            learning_rate=1e-3,
         )
 
         # doesn't work, need to patch transformers

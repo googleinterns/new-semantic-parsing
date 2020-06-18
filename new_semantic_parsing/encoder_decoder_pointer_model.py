@@ -25,10 +25,11 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
     """
     Encoder-decoder with pointer model as in arxiv.org/abs/2001.11458
     """
-    def __init__(self, encoder, decoder, **kwargs):
+    def __init__(self, encoder, decoder, maximal_pointer, **kwargs):
         """
         :param encoder: transformers.PreTrainedModel
         :param decoder: transformers.BertModel, BertFor*Model are not supported
+        :param maximal_pointer: maximum length of the encoder sequence, defines the maximum possible pointer index
         """
         assert encoder.config.hidden_size == decoder.config.hidden_size
         super().__init__(encoder=encoder, decoder=decoder, **kwargs)
@@ -36,7 +37,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         head_config = deepcopy(decoder.config)
         # TODO: we have two types of padding - encoder and decoder output padding, it would be nice to combine them
         # this gives a schema vocab size
-        head_config.vocab_size = decoder.config.vocab_size - encoder.config.vocab_size
+        head_config.vocab_size = decoder.config.vocab_size - maximal_pointer
         # Linear -> activation -> LayerNorm -> Linear
         # from config only .hidden_size, .hidden_act, .layer_norm_eps and .vocab_size are used
         self.lm_head = transformers.modeling_bert.BertLMPredictionHead(head_config)
@@ -58,6 +59,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         heads,
         src_vocab_size,
         tgt_vocab_size,
+        maximal_pointer,
         encoder_pad_token_id=0,
         decoder_pad_token_id=None,
     ):
@@ -85,7 +87,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         decoder_config = transformers.BertConfig(
             hidden_size=hidden,
             intermediate_size=4 * hidden,
-            vocab_size=tgt_vocab_size + src_vocab_size,
+            vocab_size=tgt_vocab_size + maximal_pointer,
             is_decoder=True,
             num_hidden_layers=layers,
             num_attention_heads=heads,
@@ -93,7 +95,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        return cls(encoder, decoder)
+        return cls(encoder, decoder, maximal_pointer)
 
     def forward(
         self,

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import toml
 import torch
-
+import wandb
 import transformers
 
 from new_semantic_parsing import (
@@ -29,7 +29,7 @@ from new_semantic_parsing import (
     TopSchemaTokenizer,
     Seq2SeqTrainer,
 )
-from new_semantic_parsing.data import Seq2SeqDataCollator
+from new_semantic_parsing.data import Seq2SeqDataCollator, PointerDataset
 from new_semantic_parsing import utils, SAVE_FORMAT_VERSION
 
 
@@ -94,8 +94,10 @@ if __name__ == '__main__':
 
     logger.info('Loading data')
     datasets = torch.load(data_dir/'data.pkl')
-    train_dataset = datasets['train_dataset']
-    eval_dataset = datasets['valid_dataset']
+    train_dataset: PointerDataset = datasets['train_dataset']
+    eval_dataset: PointerDataset = datasets['valid_dataset']
+
+    maximal_pointer, _ = train_dataset.get_max_len()
 
     try:
         with open(data_dir/'args.toml') as f:
@@ -119,7 +121,7 @@ if __name__ == '__main__':
 
         decoder_config = transformers.BertConfig(
             is_decoder=True,
-            vocab_size=schema_tokenizer.vocab_size + encoder.config.vocab_size,
+            vocab_size=schema_tokenizer.vocab_size + maximal_pointer,
             hidden_size=encoder.config.hidden_size,
             intermediate_size=encoder.config.intermediate_size,
             num_hidden_layers=encoder.config.num_hidden_layers,
@@ -128,7 +130,7 @@ if __name__ == '__main__':
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder)
+        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer)
     else:
         model = EncoderDecoderWPointerModel.from_parameters(
             layers=args.layers,
@@ -138,6 +140,7 @@ if __name__ == '__main__':
             tgt_vocab_size=schema_tokenizer.vocab_size,
             encoder_pad_token_id=text_tokenizer.pad_token_id,
             decoder_pad_token_id=schema_tokenizer.pad_token_id,
+            maximal_pointer=maximal_pointer,
         )
 
     logger.info('Starting training')
@@ -179,6 +182,8 @@ if __name__ == '__main__':
         data_collator=collator,
         compute_metrics=utils.compute_metrics,
     )
+
+    wandb.config.update(args)
 
     train_results = trainer.train()
     logger.info(train_results)
