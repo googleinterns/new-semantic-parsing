@@ -55,13 +55,13 @@ def parse_args(args=None):
                         help='pretrained model name, e.g. bert-base-uncased')
     parser.add_argument('--layers', default=None, type=int,
                         help='number of layers in each encoder and decoder. '
-                             'Ignored if --encoder-model is provided.')
+                             'only used for the decoder if --encoder-model is provided.')
     parser.add_argument('--hidden', default=None, type=int,
                         help='hidden size of the encoder and decoder. '
-                             'Ignored if --encoder-model is provided')
+                             'only used for the decoder if --encoder-model is provided')
     parser.add_argument('--heads', default=None, type=int,
                         help='hidden size of the encoder and decoder. '
-                             'Ignored if --encoder-model is provided')
+                             'only used for the decoder if --encoder-model is provided')
     # training
     parser.add_argument('--epochs', default=1, type=int)
     parser.add_argument('--seed', default=1, type=int)
@@ -119,13 +119,15 @@ if __name__ == '__main__':
         if encoder.config.vocab_size != text_tokenizer.vocab_size:
             raise ValueError('Preprocessing tokenizer and model tokenizer are not compatible')
 
+        ffn_hidden = 4 * args.hidden if args.hidden is not None else None
+
         decoder_config = transformers.BertConfig(
             is_decoder=True,
             vocab_size=schema_tokenizer.vocab_size + maximal_pointer,
-            hidden_size=encoder.config.hidden_size,
-            intermediate_size=encoder.config.intermediate_size,
-            num_hidden_layers=encoder.config.num_hidden_layers,
-            num_attention_heads=encoder.config.num_attention_heads,
+            hidden_size=args.hidden or encoder.config.hidden_size,
+            intermediate_size=ffn_hidden or encoder.config.intermediate_size,
+            num_hidden_layers=args.layers or encoder.config.num_hidden_layers,
+            num_attention_heads=args.heads or encoder.config.num_attention_heads,
             pad_token_id=schema_tokenizer.pad_token_id,
         )
         decoder = transformers.BertModel(decoder_config)
@@ -166,7 +168,7 @@ if __name__ == '__main__':
         warmup_steps=args.warmup_steps,
         logging_steps=100,
         save_steps=1000,
-        save_total_limit=2,
+        save_total_limit=1,
         fp16=False,
         local_rank=-1,
     )
