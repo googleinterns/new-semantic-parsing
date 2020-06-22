@@ -62,6 +62,12 @@ def parse_args(args=None):
     parser.add_argument('--heads', default=None, type=int,
                         help='hidden size of the encoder and decoder. '
                              'only used for the decoder if --encoder-model is provided')
+    # model architecture changes
+    parser.add_argument('--use-pointer-bias', default=False, action='store_true',
+                        help='Use bias in pointer network')
+    parser.add_argument('--decoder-head-type', default='ffn', choices=['ffn', 'linear'],
+                        help='Type of network used to make logits from the last decoder state')
+
     # training
     parser.add_argument('--epochs', default=1, type=int)
     parser.add_argument('--seed', default=1, type=int)
@@ -72,10 +78,16 @@ def parse_args(args=None):
     parser.add_argument('--decoder-lr', default=None, type=float,
                         help='Decoder learning rate, overrides --lr')
     parser.add_argument('--weight-decay', default=0, type=float)
+    parser.add_argument('--dropout', default=0.1, type=float,
+                        help='dropout amount for the encoder and decoder, default value 0.1 is from Transformers')
     parser.add_argument('--warmup-steps', default=0, type=int)
     parser.add_argument('--gradient-accumulation-steps', default=1, type=int)
     parser.add_argument('--batch-size', default=64, type=int)
+
+    # misc
     parser.add_argument('--wandb-project', default=None)
+    parser.add_argument('--no-evaluation', default=False, action='store_true')
+    parser.add_argument('--log-every', default=100, type=int)
     return parser.parse_args(args)
 
 
@@ -115,7 +127,12 @@ if __name__ == '__main__':
             logger.warning(f'Preprocessing tokenizer     : {preprocess_args["text_tokenizer"]}')
             logger.warning(f'Pretrained encoder tokenizer: {args.encoder_model}')
 
-        encoder = transformers.AutoModel.from_pretrained(args.encoder_model)
+        encoder_config = transformers.AutoConfig.from_pretrained(args.encoder_model)
+        encoder_config.hidden_dropout_prob = args.dropout
+        encoder_config.attention_probs_dropout_prob = args.dropout
+
+        encoder = transformers.AutoModel.from_config(encoder_config)
+
         if encoder.config.vocab_size != text_tokenizer.vocab_size:
             raise ValueError('Preprocessing tokenizer and model tokenizer are not compatible')
 
@@ -129,11 +146,14 @@ if __name__ == '__main__':
             num_hidden_layers=args.layers or encoder.config.num_hidden_layers,
             num_attention_heads=args.heads or encoder.config.num_attention_heads,
             pad_token_id=schema_tokenizer.pad_token_id,
+            hidden_dropout_prob=args.dropout,
+            attention_probs_dropout_prob=args.dropout,
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer)
-    else:
+        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer, model_args=args)
+
+    else:  # if args.encoder_model is not specified
         model = EncoderDecoderWPointerModel.from_parameters(
             layers=args.layers,
             hidden=args.hidden,
@@ -143,6 +163,9 @@ if __name__ == '__main__':
             encoder_pad_token_id=text_tokenizer.pad_token_id,
             decoder_pad_token_id=schema_tokenizer.pad_token_id,
             maximal_pointer=maximal_pointer,
+            hidden_dropout_prob=args.dropout,
+            attention_probs_dropout_prob=args.dropout,
+            model_args=args,
         )
 
     logger.info('Starting training')
@@ -153,6 +176,10 @@ if __name__ == '__main__':
 
     if args.output_dir is None:
         args.output_dir = os.path.join('output_dir', next(tempfile._get_candidate_names()))
+
+    if args.no_evaluation:
+        # to get the metrics
+        eval_dataset = train_dataset
 
     train_args = transformers.TrainingArguments(
         output_dir=args.output_dir,
@@ -166,7 +193,7 @@ if __name__ == '__main__':
         learning_rate=lr,
         weight_decay=args.weight_decay,
         warmup_steps=args.warmup_steps,
-        logging_steps=100,
+        logging_steps=args.log_every,
         save_steps=1000,
         save_total_limit=1,
         fp16=False,
@@ -186,13 +213,16 @@ if __name__ == '__main__':
     )
 
     wandb.config.update(args)
+    if preprocess_args is not None:
+        wandb.config.update({'preprocess_' + k: v for k, v in preprocess_args.items()})
 
     train_results = trainer.train()
     logger.info(train_results)
 
     trainer.save_model(args.output_dir)
 
-    eval_results = trainer.evaluate()
-    logger.info(eval_results)
+    if not args.no_evaluation:
+        eval_results = trainer.evaluate()
+        logger.info(eval_results)
 
     logger.info('Training finished!')

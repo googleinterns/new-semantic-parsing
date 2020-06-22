@@ -55,6 +55,8 @@ def parse_args(args=None):
                         help='pratrained tokenizer name or path to a saved tokenizer')
     parser.add_argument('--save-dir', required=True,
                         help='directory to save preprocessed data')
+    parser.add_argument('--schema-vocab',
+                        help='path to schema vocab to use')
     parser.add_argument('--seed', default=34)
 
     # NOTE: maybe store training args too?
@@ -99,7 +101,13 @@ if __name__ == '__main__':
     train_data = pd.read_table(Path(args.data)/'train.tsv', names=['text', 'tokens', 'schema'])
 
     logger.info('Getting schema vocabulary')
-    schema_vocab = reduce(set.union, map(utils.get_vocab_top_schema, train_data.schema))
+
+    if args.schema_vocab is None:
+        schema_vocab = reduce(set.union, map(utils.get_vocab_top_schema, train_data.schema))
+    else:
+        with open(args.schema_vocab) as f:
+            schema_vocab = f.read().split('\n')
+
     logger.info(f'Schema vocabulary size: {len(schema_vocab)}')
 
     logger.info('Building tokenizers')

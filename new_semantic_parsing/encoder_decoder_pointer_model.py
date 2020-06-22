@@ -25,22 +25,37 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
     """
     Encoder-decoder with pointer model as in arxiv.org/abs/2001.11458
     """
-    def __init__(self, encoder, decoder, maximal_pointer, **kwargs):
+    def __init__(self, encoder, decoder, maximal_pointer, model_args=None, **kwargs):
         """
         :param encoder: transformers.PreTrainedModel
         :param decoder: transformers.BertModel, BertFor*Model are not supported
+        :param model_args: argparse arguments, architecture parameters
         :param maximal_pointer: maximum length of the encoder sequence, defines the maximum possible pointer index
         """
-        assert encoder.config.hidden_size == decoder.config.hidden_size
         super().__init__(encoder=encoder, decoder=decoder, **kwargs)
+        self.model_args = model_args
 
-        head_config = deepcopy(decoder.config)
-        # TODO: we have two types of padding - encoder and decoder output padding, it would be nice to combine them
-        # this gives a schema vocab size
-        head_config.vocab_size = decoder.config.vocab_size - maximal_pointer
-        # Linear -> activation -> LayerNorm -> Linear
-        # from config only .hidden_size, .hidden_act, .layer_norm_eps and .vocab_size are used
-        self.lm_head = transformers.modeling_bert.BertLMPredictionHead(head_config)
+        # unwrap all model_args here for clarity
+        decoder_head_type = getattr(model_args, 'decoder_head_type', 'ffn')
+        use_pointer_bias = getattr(model_args, 'use_pointer_bias', False)
+
+        self.enc_dec_proj = None
+        if encoder.config.hidden_size != decoder.config.hidden_size:
+            self.enc_dec_proj = nn.Linear(encoder.config.hidden_size, decoder.config.hidden_size)
+
+        # this gives a schema vocab size (without pointer embeddings)
+        output_vocab_size = decoder.config.vocab_size - maximal_pointer
+        if decoder_head_type == 'ffn':
+            head_config = deepcopy(decoder.config)
+            head_config.vocab_size = output_vocab_size
+
+            # Linear -> activation -> LayerNorm -> Linear
+            # from config only .hidden_size, .hidden_act, .layer_norm_eps and .vocab_size are used
+            self.lm_head = transformers.modeling_bert.BertLMPredictionHead(head_config)
+        elif model_args.decoder_head_type == 'linear':
+            self.lm_head = nn.Linear(decoder.config.hidden_size, output_vocab_size)
+        else:
+            raise ValueError(model_args.decoder_head_type)
 
         # One does not simply ties weights of embeddings with different vocabularies
         # # lm_head.decoder is just a linear layer
@@ -48,8 +63,8 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         #                            self.decoder.get_input_embeddings())
 
         self.decoder_q_proj = nn.Linear(self.decoder.config.hidden_size,
-                                        self.encoder.config.hidden_size,
-                                        bias=False)
+                                        self.decoder.config.hidden_size,
+                                        bias=use_pointer_bias)
 
     @classmethod
     def from_parameters(
@@ -62,6 +77,9 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         maximal_pointer,
         encoder_pad_token_id=0,
         decoder_pad_token_id=None,
+        hidden_dropout_prob=0.1,
+        attention_probs_dropout_prob=0.1,
+        model_args=None,
     ):
         """
         :param layers: number of layers for encoder and for decoder
@@ -79,6 +97,8 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
             vocab_size=src_vocab_size,
             num_hidden_layers=layers,
             num_attention_heads=heads,
+            hidden_dropout_prob=hidden_dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob,
             pad_token_id=encoder_pad_token_id,
         )
         encoder = transformers.BertModel(encoder_config)
@@ -91,11 +111,13 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
             is_decoder=True,
             num_hidden_layers=layers,
             num_attention_heads=heads,
+            hidden_dropout_prob=hidden_dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob,
             pad_token_id=decoder_pad_token_id,
         )
         decoder = transformers.BertModel(decoder_config)
 
-        return cls(encoder, decoder, maximal_pointer)
+        return cls(encoder, decoder, maximal_pointer=maximal_pointer, model_args=model_args)
 
     def forward(
         self,
@@ -153,6 +175,9 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
             )
 
         encoder_hidden_states = encoder_outputs[0]
+
+        if self.enc_dec_proj is not None:
+            encoder_hidden_states = self.enc_dec_proj(encoder_hidden_states)
 
         # Decode
         decoder_outputs = self.decoder(

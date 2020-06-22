@@ -226,13 +226,8 @@ class ModelOverfitTest(unittest.TestCase):
         if os.path.exists('runs'):
             shutil.rmtree('runs')
 
-    def test_overfit(self):
-        random.seed(42)
-        torch.manual_seed(42)
-        np.random.seed(42)
-        # NOTE: slow test
-
-        tokenizer = transformers.AutoTokenizer.from_pretrained('distilbert-base-uncased')
+    def _prepare_data(self):
+        tokenizer = transformers.AutoTokenizer.from_pretrained('bert-base-cased')
 
         vocab = {'[', ']', 'IN:', 'SL:', 'GET_DIRECTIONS', 'DESTINATION',
                  'DATE_TIME_DEPARTURE', 'GET_ESTIMATED_ARRIVAL'}
@@ -261,6 +256,16 @@ class ModelOverfitTest(unittest.TestCase):
         dataset = PointerDataset(source_ids, schema_ids, source_pointer_masks, schema_pointer_masks)
         dataset.torchify()
 
+        return dataset, tokenizer, schema_tokenizer
+
+    def test_overfit(self):
+        random.seed(42)
+        torch.manual_seed(42)
+        np.random.seed(42)
+        # NOTE: slow test
+
+        dataset, tokenizer, schema_tokenizer = self._prepare_data()
+
         src_maxlen, _ = dataset.get_max_len()
 
         model = EncoderDecoderWPointerModel.from_parameters(
@@ -274,6 +279,69 @@ class ModelOverfitTest(unittest.TestCase):
             num_train_epochs=30,
             seed=42,
             learning_rate=1e-3,
+        )
+
+        # doesn't work, need to patch transformers
+        os.environ["WANDB_DISABLED"] = "true"
+        os.environ["WANDB_WATCH"] = "false"
+        transformers.trainer.is_wandb_available = lambda: False  # workaround
+
+        trainer = Seq2SeqTrainer(
+            model,
+            train_args,
+            train_dataset=dataset,
+            data_collator=Seq2SeqDataCollator(model.encoder.embeddings.word_embeddings.padding_idx),
+            eval_dataset=dataset,
+            compute_metrics=compute_metrics,
+        )
+        # a trick to reduce the amount of logging
+        trainer.is_local_master = lambda: False
+
+        random.seed(42)
+        torch.manual_seed(42)
+        np.random.seed(42)
+
+        train_out = trainer.train()
+        eval_out = trainer.evaluate()
+
+        pprint('Training output')
+        pprint(train_out)
+        pprint('Evaluation output')
+        pprint(eval_out)
+
+        # accuracy should be 1.0 and eval loss should be around 0.9
+        self.assertGreater(eval_out['eval_accuracy'], 0.99)
+
+    def test_overfit_bert(self):
+        random.seed(42)
+        torch.manual_seed(42)
+        np.random.seed(42)
+        # NOTE: very slow test
+
+        dataset, tokenizer, schema_tokenizer = self._prepare_data()
+
+        src_maxlen, _ = dataset.get_max_len()
+
+        encoder = transformers.AutoModel.from_pretrained('bert-base-cased')
+
+        decoder = transformers.BertModel(transformers.BertConfig(
+            is_decoder=True,
+            vocab_size=schema_tokenizer.vocab_size + src_maxlen,
+            hidden_size=encoder.config.hidden_size,
+            intermediate_size=encoder.config.intermediate_size,
+            num_hidden_layers=encoder.config.num_hidden_layers,
+            num_attention_heads=encoder.config.num_attention_heads,
+            pad_token_id=schema_tokenizer.pad_token_id,
+        ))
+
+        model = EncoderDecoderWPointerModel(encoder, decoder, src_maxlen)
+
+        train_args = transformers.TrainingArguments(
+            output_dir=self.output_dir,
+            do_train=True,
+            num_train_epochs=50,
+            seed=42,
+            learning_rate=1e-4,
         )
 
         # doesn't work, need to patch transformers
