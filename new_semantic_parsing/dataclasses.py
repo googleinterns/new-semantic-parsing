@@ -51,3 +51,24 @@ class Seq2SeqEvalPrediciton:
     label_ids: List[np.ndarray]
     label_masks: List[np.ndarray] = None
 
+    @classmethod
+    def from_batches(cls, predictions_tensor, label_ids_tensor, label_masks_tensor):
+        """
+        :param predictions_tensor: torch.Tensor of shape (batch_size, seq_len, vocab_size)
+        :param label_ids_tensor: torch.Tensor of shape (batch_size, seq_len)
+        :param label_masks_tensor: torch.Tensor of shape (batch_size, seq_len)
+        :return: Seq2SeqEvalPrediciton
+        """
+
+        logits = predictions_tensor.detach().cpu().unbind(dim=0)
+        logits = [l.numpy() for l in logits]
+
+        labels = label_ids_tensor.cpu().unbind(dim=0)
+        labels = [l.numpy() for l in labels]
+
+        masks = None
+        if label_masks_tensor is not None:
+            masks = label_masks_tensor.cpu().unbind(dim=0)
+            masks = [m.numpy() for m in masks]
+
+        return cls(logits, labels, masks)

@@ -42,6 +42,16 @@ def get_src_pointer_mask(input_ids, tokenizer: transformers.PreTrainedTokenizer)
 
 
 def compute_metrics(eval_prediction: Seq2SeqEvalPrediciton):
+    """
+    :param eval_prediction: each field of the dataclass corresponds to a list,
+        list element is a single example
+    :return:
+    """
+    if len(eval_prediction.predictions[0].shape) != 2:
+        raise ValueError('eval_prediction.predictions should be a list of predictions, '
+                         'expected prediction shape to be (seq_len, vocab_dim), got '
+                         f'{eval_prediction.predictions[0].shape} instead')
+
     predictions = [np.argmax(p, axis=-1) for p in eval_prediction.predictions]
     labels = eval_prediction.label_ids
 

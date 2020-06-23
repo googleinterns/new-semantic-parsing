@@ -276,14 +276,15 @@ class Seq2SeqTrainer(transformers.Trainer):
                         self._log(logs)
 
                         # log training metrics. For computational reasons, only one batch is used
-                        logits = model_outputs[1].detach().cpu().numpy()
-                        labels = inputs['labels'].cpu().numpy()
+                        logits = model_outputs[1]
+                        labels = inputs['labels']
                         masks = inputs.get('decoder_attention_mask', None)
-                        if masks is not None:
-                            masks = masks.cpu().numpy()
 
-                        _metrics = self.compute_metrics(Seq2SeqEvalPrediciton([logits], [labels], [masks]))
+                        _prediction = Seq2SeqEvalPrediciton.from_batches(logits, labels, masks)
+
+                        _metrics = self.compute_metrics(Seq2SeqEvalPrediciton.from_batches(logits, labels, masks))
                         _metrics = {f'train_batch_{k}': v for k, v in _metrics.items()}
+
                         self._log(_metrics)
 
                         if self.args.evaluate_during_training:
