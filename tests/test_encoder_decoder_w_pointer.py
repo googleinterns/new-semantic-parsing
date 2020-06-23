@@ -342,12 +342,10 @@ class ModelOverfitTest(unittest.TestCase):
             num_train_epochs=50,
             seed=42,
             learning_rate=1e-4,
+            logging_steps=1,
         )
 
-        # doesn't work, need to patch transformers
-        os.environ["WANDB_DISABLED"] = "true"
-        os.environ["WANDB_WATCH"] = "false"
-        transformers.trainer.is_wandb_available = lambda: False  # workaround
+        transformers.trainer.is_wandb_available = lambda: False  # workaround to turn off wandb
 
         trainer = Seq2SeqTrainer(
             model,
