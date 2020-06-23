@@ -153,7 +153,7 @@ if __name__ == '__main__':
         encoder_config.hidden_dropout_prob = args.dropout
         encoder_config.attention_probs_dropout_prob = args.dropout
 
-        encoder = transformers.AutoModel.from_config(encoder_config)
+        encoder = transformers.AutoModel.from_pretrained(args.encoder_model, config=encoder_config)
 
         if encoder.config.vocab_size != text_tokenizer.vocab_size:
             raise ValueError('Preprocessing tokenizer and model tokenizer are not compatible')
