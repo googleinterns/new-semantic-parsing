@@ -75,6 +75,9 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         src_vocab_size,
         tgt_vocab_size,
         maximal_pointer,
+        decoder_layers=None,
+        decoder_hidden=None,
+        decoder_heads=None,
         encoder_pad_token_id=0,
         decoder_pad_token_id=None,
         hidden_dropout_prob=0.1,
@@ -104,13 +107,17 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         encoder = transformers.BertModel(encoder_config)
 
         decoder_pad_token_id = decoder_pad_token_id or encoder_pad_token_id
+        decoder_hidden = decoder_hidden or hidden
+        decoder_layers = decoder_layers or layers
+        decoder_heads = decoder_heads or heads
+
         decoder_config = transformers.BertConfig(
-            hidden_size=hidden,
-            intermediate_size=4 * hidden,
+            hidden_size=decoder_hidden,
+            intermediate_size=4 * decoder_hidden,
             vocab_size=tgt_vocab_size + maximal_pointer,
             is_decoder=True,
-            num_hidden_layers=layers,
-            num_attention_heads=heads,
+            num_hidden_layers=decoder_layers,
+            num_attention_heads=decoder_heads,
             hidden_dropout_prob=hidden_dropout_prob,
             attention_probs_dropout_prob=attention_probs_dropout_prob,
             pad_token_id=decoder_pad_token_id,

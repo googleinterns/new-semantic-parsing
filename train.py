@@ -54,14 +54,24 @@ def parse_args(args=None):
     parser.add_argument('--encoder-model', default=None,
                         help='pretrained model name, e.g. bert-base-uncased')
     parser.add_argument('--layers', default=None, type=int,
-                        help='number of layers in each encoder and decoder. '
-                             'only used for the decoder if --encoder-model is provided.')
+                        help='number of layers in the encoder. '
+                             'Only used if --encoder-model is not provided.')
     parser.add_argument('--hidden', default=None, type=int,
-                        help='hidden size of the encoder and decoder. '
-                             'only used for the decoder if --encoder-model is provided')
+                        help='hidden size of the encoder. '
+                             'Only used if --encoder-model is not provided.')
     parser.add_argument('--heads', default=None, type=int,
-                        help='hidden size of the encoder and decoder. '
-                             'only used for the decoder if --encoder-model is provided')
+                        help='hidden size of the encoder. '
+                             'Only used if --encoder-model is not provided.')
+    parser.add_argument('--decoder-layers', default=None, type=int,
+                        help='number of layers in the decoder. '
+                             'Equal to the number of the encoder layers by default')
+    parser.add_argument('--decoder-hidden', default=None, type=int,
+                        help='hidden size of the decoder. '
+                             'Equal to the hidden side of the encoder by default')
+    parser.add_argument('--decoder-heads', default=None, type=int,
+                        help='hidden size of the decoder. '
+                             'Equal to the number of the encoder heads by default')
+
     # model architecture changes
     parser.add_argument('--use-pointer-bias', default=False, action='store_true',
                         help='Use bias in pointer network')
@@ -89,14 +99,25 @@ def parse_args(args=None):
     parser.add_argument('--wandb-project', default=None)
     parser.add_argument('--no-evaluation', default=False, action='store_true')
     parser.add_argument('--log-every', default=100, type=int)
-    return parser.parse_args(args)
+
+    args = parser.parse_args(args)
+
+    # set defaults for None fields
+    if (args.encoder_lr is not None) ^ (args.decoder_lr is not None):
+        raise ValueError('--encoder-lr and --decoder-lr should be both specified')
+
+    args.decoder_layers = args.decoder_layers or args.layers
+    args.decoder_hidden = args.decoder_hidden or args.hidden
+    args.decoder_heads = args.decoder_heads or args.heads
+
+    if args.output_dir is None:
+        args.output_dir = os.path.join('output_dir', next(tempfile._get_candidate_names()))
+
+    return args
 
 
 if __name__ == '__main__':
     args = parse_args()
-
-    if (args.encoder_lr is not None) ^ (args.decoder_lr is not None):
-        raise ValueError('--encoder-lr and --decoder-lr should be both specified')
 
     data_dir = Path(args.data_dir)
 
@@ -137,15 +158,15 @@ if __name__ == '__main__':
         if encoder.config.vocab_size != text_tokenizer.vocab_size:
             raise ValueError('Preprocessing tokenizer and model tokenizer are not compatible')
 
-        ffn_hidden = 4 * args.hidden if args.hidden is not None else None
+        ffn_hidden = 4 * args.decoder_hidden if args.decoder_hidden is not None else None
 
         decoder_config = transformers.BertConfig(
             is_decoder=True,
             vocab_size=schema_tokenizer.vocab_size + maximal_pointer,
-            hidden_size=args.hidden or encoder.config.hidden_size,
+            hidden_size=args.decoder_hidden or encoder.config.hidden_size,
             intermediate_size=ffn_hidden or encoder.config.intermediate_size,
-            num_hidden_layers=args.layers or encoder.config.num_hidden_layers,
-            num_attention_heads=args.heads or encoder.config.num_attention_heads,
+            num_hidden_layers=args.decoder_layers or encoder.config.num_hidden_layers,
+            num_attention_heads=args.decoder_heads or encoder.config.num_attention_heads,
             pad_token_id=schema_tokenizer.pad_token_id,
             hidden_dropout_prob=args.dropout,
             attention_probs_dropout_prob=args.dropout,
@@ -159,6 +180,9 @@ if __name__ == '__main__':
             layers=args.layers,
             hidden=args.hidden,
             heads=args.heads,
+            decoder_layers=args.decoder_layers,
+            decoder_hidden=args.decoder_hidden,
+            decoder_heads=args.decoder_heads,
             src_vocab_size=text_tokenizer.vocab_size,
             tgt_vocab_size=schema_tokenizer.vocab_size,
             encoder_pad_token_id=text_tokenizer.pad_token_id,
@@ -174,9 +198,6 @@ if __name__ == '__main__':
 
     if args.encoder_lr is not None and args.decoder_lr is not None:
         lr = {'encoder_lr': args.encoder_lr, 'decoder_lr': args.decoder_lr}
-
-    if args.output_dir is None:
-        args.output_dir = os.path.join('output_dir', next(tempfile._get_candidate_names()))
 
     if args.no_evaluation:
         # to get the metrics
