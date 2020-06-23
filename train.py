@@ -83,6 +83,7 @@ def parse_args(args=None):
     parser.add_argument('--warmup-steps', default=0, type=int)
     parser.add_argument('--gradient-accumulation-steps', default=1, type=int)
     parser.add_argument('--batch-size', default=64, type=int)
+    parser.add_argument('--max-grad-norm', default=1.0, type=float)
 
     # misc
     parser.add_argument('--wandb-project', default=None)
@@ -192,6 +193,7 @@ if __name__ == '__main__':
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=lr,
         weight_decay=args.weight_decay,
+        max_grad_norm=args.max_grad_norm,
         warmup_steps=args.warmup_steps,
         logging_steps=args.log_every,
         save_steps=1000,
