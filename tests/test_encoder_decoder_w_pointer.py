@@ -25,13 +25,13 @@ import numpy as np
 
 from new_semantic_parsing import EncoderDecoderWPointerModel, Seq2SeqTrainer
 from new_semantic_parsing.schema_tokenizer import TopSchemaTokenizer
-from new_semantic_parsing.utils import compute_metrics, get_src_pointer_mask
+from new_semantic_parsing.utils import compute_metrics, get_src_pointer_mask, set_seed
 from new_semantic_parsing.data import PointerDataset, Seq2SeqDataCollator
 
 
 class EncoderDecoderWPointerTest(unittest.TestCase):
     def test_shape_on_random_data(self):
-        torch.manual_seed(42)
+        set_seed(42)
 
         bs = 3
         src_len = 5
@@ -59,7 +59,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
 
         # logits are projected into schema vocab and combined with pointer scores
         max_pointer = src_len + 3
-        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer=max_pointer)
+        model = EncoderDecoderWPointerModel(encoder, decoder, max_src_len=max_pointer)
 
         x_enc = torch.randint(0, encoder_config.vocab_size, size=(bs, src_len))
         x_dec = torch.randint(0, decoder_config.vocab_size, size=(bs, tgt_len))
@@ -89,7 +89,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         self.assertEqual(encoder_hidden.shape, expected_shape)
 
     def test_shape_on_real_data(self):
-        torch.manual_seed(42)
+        set_seed(42)
         src_vocab_size = 17
         tgt_vocab_size = 23
         max_position = 5
@@ -130,7 +130,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         self.assertEqual(combined_logits.shape, expected_shape)
 
     def test_shape_on_real_data_batched(self):
-        torch.manual_seed(42)
+        set_seed(42)
         src_vocab_size = 17
         tgt_vocab_size = 23
         max_position = 7
@@ -196,7 +196,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer=7)
+        model = EncoderDecoderWPointerModel(encoder, decoder, max_src_len=7)
 
         # similar to real data
         src_seq = torch.LongTensor([[1, 6, 12, 15, 2, 0, 0],
@@ -258,33 +258,15 @@ class ModelOverfitTest(unittest.TestCase):
 
         return dataset, tokenizer, schema_tokenizer
 
-    def test_overfit(self):
-        random.seed(42)
-        torch.manual_seed(42)
-        np.random.seed(42)
-        # NOTE: slow test
-
-        dataset, tokenizer, schema_tokenizer = self._prepare_data()
-
-        src_maxlen, _ = dataset.get_max_len()
-
-        model = EncoderDecoderWPointerModel.from_parameters(
-            layers=3, hidden=128, heads=2, maximal_pointer=src_maxlen,
-            src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
-        )
-
+    def _train_model(self, model, dataset, lr, epochs):
         train_args = transformers.TrainingArguments(
             output_dir=self.output_dir,
             do_train=True,
-            num_train_epochs=30,
+            num_train_epochs=epochs,
             seed=42,
-            learning_rate=1e-3,
+            learning_rate=lr,
         )
-
-        # doesn't work, need to patch transformers
-        os.environ["WANDB_DISABLED"] = "true"
-        os.environ["WANDB_WATCH"] = "false"
-        transformers.trainer.is_wandb_available = lambda: False  # workaround
+        transformers.trainer.is_wandb_available = lambda: False  # workaround to turn off wandb
 
         trainer = Seq2SeqTrainer(
             model,
@@ -297,13 +279,25 @@ class ModelOverfitTest(unittest.TestCase):
         # a trick to reduce the amount of logging
         trainer.is_local_master = lambda: False
 
-        random.seed(42)
-        torch.manual_seed(42)
-        np.random.seed(42)
-
         train_out = trainer.train()
         eval_out = trainer.evaluate()
 
+        return model, train_out, eval_out
+
+    def test_overfit(self):
+        set_seed(42)
+        # NOTE: slow test
+
+        dataset, tokenizer, schema_tokenizer = self._prepare_data()
+
+        src_maxlen, _ = dataset.get_max_len()
+
+        model = EncoderDecoderWPointerModel.from_parameters(
+            layers=3, hidden=128, heads=2, max_src_len=src_maxlen,
+            src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
+        )
+
+        model, train_out, eval_out = self._train_model(model, dataset, 1e-3, 30)
         pprint('Training output')
         pprint(train_out)
         pprint('Evaluation output')
@@ -313,9 +307,7 @@ class ModelOverfitTest(unittest.TestCase):
         self.assertGreater(eval_out['eval_accuracy'], 0.99)
 
     def test_overfit_bert(self):
-        random.seed(42)
-        torch.manual_seed(42)
-        np.random.seed(42)
+        set_seed(42)
         # NOTE: very slow test
 
         dataset, tokenizer, schema_tokenizer = self._prepare_data()
@@ -336,34 +328,7 @@ class ModelOverfitTest(unittest.TestCase):
 
         model = EncoderDecoderWPointerModel(encoder, decoder, src_maxlen)
 
-        train_args = transformers.TrainingArguments(
-            output_dir=self.output_dir,
-            do_train=True,
-            num_train_epochs=50,
-            seed=42,
-            learning_rate=1e-4,
-            logging_steps=1,
-        )
-
-        transformers.trainer.is_wandb_available = lambda: False  # workaround to turn off wandb
-
-        trainer = Seq2SeqTrainer(
-            model,
-            train_args,
-            train_dataset=dataset,
-            data_collator=Seq2SeqDataCollator(model.encoder.embeddings.word_embeddings.padding_idx),
-            eval_dataset=dataset,
-            compute_metrics=compute_metrics,
-        )
-        # a trick to reduce the amount of logging
-        trainer.is_local_master = lambda: False
-
-        random.seed(42)
-        torch.manual_seed(42)
-        np.random.seed(42)
-
-        train_out = trainer.train()
-        eval_out = trainer.evaluate()
+        model, train_out, eval_out = self._train_model(model, dataset, 1e-4, 50)
 
         pprint('Training output')
         pprint(train_out)
@@ -372,3 +337,89 @@ class ModelOverfitTest(unittest.TestCase):
 
         # accuracy should be 1.0 and eval loss should be around 0.9
         self.assertGreater(eval_out['eval_accuracy'], 0.99)
+
+    def test_overfit_generate(self):
+        set_seed(42)
+        # NOTE: slow test
+
+        dataset, tokenizer, schema_tokenizer = self._prepare_data()
+
+        src_maxlen, _ = dataset.get_max_len()
+
+        model = EncoderDecoderWPointerModel.from_parameters(
+            layers=3, hidden=128, heads=2, max_src_len=src_maxlen,
+            src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
+        )
+
+        model, _, _ = self._train_model(model, dataset, 1e-3, 30)
+
+        example = dataset[0]
+        input_ids = example.input_ids.unsqueeze(0)
+        labels = example.labels.unsqueeze(0)
+        pointer_mask = example.pointer_mask.unsqueeze(0)
+        max_len = len(example.decoder_input_ids)
+
+        for num_beams in (1, 4):
+            with self.subTest(msg=f'num_beams={num_beams} (1 is greedy)'):
+                generated = model.generate(
+                    input_ids=input_ids,
+                    max_length=max_len,
+                    num_beams=num_beams,
+                    pad_token_id=tokenizer.pad_token_id,
+                    bos_token_id=schema_tokenizer.bos_token_id,
+                    eos_token_id=schema_tokenizer.eos_token_id,
+                    pointer_mask=pointer_mask,
+                )
+
+                for generated_item, expected_item in zip(generated, labels):
+                    # trim EOS for expected
+                    self.assertTrue(torch.all(generated_item == expected_item[:-1]))
+
+                decoded = [schema_tokenizer.decode(generated[i], input_ids[i]) for i in range(len(generated))]
+                pprint(decoded)
+
+    def test_overfit_generate_batched(self):
+        set_seed(42)
+        # NOTE: slow test
+
+        dataset, tokenizer, schema_tokenizer = self._prepare_data()
+
+        src_maxlen, _ = dataset.get_max_len()
+
+        model = EncoderDecoderWPointerModel.from_parameters(
+            layers=3, hidden=128, heads=2, max_src_len=src_maxlen,
+            src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
+        )
+
+        model, _, _ = self._train_model(model, dataset, 1e-3, 30)
+
+        dl = torch.utils.data.DataLoader(
+            dataset, batch_size=2, collate_fn=Seq2SeqDataCollator(model.encoder.embeddings.word_embeddings.padding_idx).collate_batch
+        )
+
+        example = next(iter(dl))
+        input_ids = example['input_ids']
+        attention_mask = example['attention_mask']
+        labels = example['labels']
+        pointer_mask = example['pointer_mask']
+        max_len = max(map(len, example['decoder_input_ids']))
+
+        for num_beams in (1, 4):
+            with self.subTest(msg=f'num_beams={num_beams} (1 is greedy)'):
+                generated = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    max_length=max_len,
+                    num_beams=num_beams,
+                    pad_token_id=tokenizer.pad_token_id,
+                    bos_token_id=schema_tokenizer.bos_token_id,
+                    eos_token_id=schema_tokenizer.eos_token_id,
+                    pointer_mask=pointer_mask,
+                )
+
+                for generated_item, expected_item in zip(generated, labels):
+                    # trim EOS for expected
+                    self.assertTrue(torch.all(generated_item == expected_item[:-1]))
+
+                decoded = [schema_tokenizer.decode(generated[i], input_ids[i]) for i in range(len(generated))]
+                pprint(decoded)

@@ -25,15 +25,16 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
     """
     Encoder-decoder with pointer model as in arxiv.org/abs/2001.11458
     """
-    def __init__(self, encoder, decoder, maximal_pointer, model_args=None, **kwargs):
+    def __init__(self, encoder, decoder, max_src_len, model_args=None, **kwargs):
         """
         :param encoder: transformers.PreTrainedModel
         :param decoder: transformers.BertModel, BertFor*Model are not supported
         :param model_args: argparse arguments, architecture parameters
-        :param maximal_pointer: maximum length of the encoder sequence, defines the maximum possible pointer index
+        :param max_src_len: maximum length of the encoder sequence, defines the maximum possible pointer index
         """
         super().__init__(encoder=encoder, decoder=decoder, **kwargs)
         self.model_args = model_args
+        self.max_src_len = max_src_len
 
         # unwrap all model_args here for clarity
         decoder_head_type = getattr(model_args, 'decoder_head_type', 'ffn')
@@ -44,16 +45,16 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
             self.enc_dec_proj = nn.Linear(encoder.config.hidden_size, decoder.config.hidden_size)
 
         # this gives a schema vocab size (without pointer embeddings)
-        output_vocab_size = decoder.config.vocab_size - maximal_pointer
+        self.output_vocab_size = decoder.config.vocab_size - max_src_len
         if decoder_head_type == 'ffn':
             head_config = deepcopy(decoder.config)
-            head_config.vocab_size = output_vocab_size
+            head_config.vocab_size = self.output_vocab_size
 
             # Linear -> activation -> LayerNorm -> Linear
             # from config only .hidden_size, .hidden_act, .layer_norm_eps and .vocab_size are used
             self.lm_head = transformers.modeling_bert.BertLMPredictionHead(head_config)
         elif model_args.decoder_head_type == 'linear':
-            self.lm_head = nn.Linear(decoder.config.hidden_size, output_vocab_size)
+            self.lm_head = nn.Linear(decoder.config.hidden_size, self.output_vocab_size)
         else:
             raise ValueError(model_args.decoder_head_type)
 
@@ -66,6 +67,86 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
                                         self.decoder.config.hidden_size,
                                         bias=use_pointer_bias)
 
+        # used in .generate to reset decoder vocab size value after generation
+        self._actual_vocab_size = self.decoder.config.vocab_size
+
+    def get_output_embeddings(self):
+        """
+        The only purpose of this function is to pass get_output_embeddings check in the .decode() method
+        """
+        return object()
+
+    def prepare_inputs_for_generation(self, input_ids, past, attention_mask, **kwargs):
+        assert past is not None, "past has to be defined for encoder_outputs"
+
+        pointer_mask = kwargs.get('pointer_mask', None)
+        if pointer_mask is None:
+            raise ValueError('pointer_mask should be specified')
+
+        input_batch_size = input_ids.shape[0]
+        pointer_mask_batch_size = pointer_mask.shape[0]
+
+        if input_batch_size != pointer_mask_batch_size:
+            # happends during beam search, when input_ids got copied num_beams times
+            num_beams = input_batch_size // pointer_mask_batch_size
+            assert input_batch_size % pointer_mask_batch_size == 0
+            pointer_mask = pointer_mask.repeat_interleave(repeats=num_beams, dim=0)
+
+        # first step
+        if type(past) is tuple:
+            encoder_outputs = past
+        else:
+            encoder_outputs = (past,)
+
+        decoder_inputs = self.decoder.prepare_inputs_for_generation(input_ids)
+
+        # decoder attention mask is not passed as it does not make sense to do it while generating
+        return {
+            "attention_mask": attention_mask,
+            "decoder_input_ids": decoder_inputs["input_ids"],
+            "encoder_outputs": encoder_outputs,
+            "pointer_mask": pointer_mask,
+        }
+
+    def generate(
+        self,
+        input_ids,
+        pointer_mask,
+        bos_token_id,
+        **kwargs
+    ) -> torch.LongTensor:
+        if input_ids.dim() != 2:
+            raise ValueError('input_ids should be of shape (batch_size, seq_len)')
+
+        if kwargs.get('use_cache', False) is True:
+            # it is not clear what exactly use_cache is supposed to do
+            raise ValueError('caching decoder outputs is not supported, '
+                             'encoder output is cached regardless of this option')
+        kwargs['use_cache'] = False
+
+        if input_ids.shape != pointer_mask.shape:
+            # this bug may be tricky to catch layer, so better to validate it here
+            raise ValueError('input_ids and pointer_mask shapes do not align: '
+                             f'input_ids.shape={input_ids.shape}, pointer_mask.shape={pointer_mask.shape}')
+
+        # Tricky hack with dynamic output size. Beam search is using vocab size for reshaping
+        # e.g. .view(batch_size, num_beams, vocab_size) however, in the case of pointer network,
+        # the number of logits depends on the input size (batch_size, tgt_seq_len, schema_vocab_size + src_seq_len).
+        # To overcome this, we change self.decoder.vocab_size when generating.
+        src_seq_len = input_ids.shape[1]
+        self.config.decoder.vocab_size = self.output_vocab_size + src_seq_len
+
+        generated = super().generate(input_ids=input_ids, pointer_mask=pointer_mask, bos_token_id=bos_token_id, **kwargs)
+
+        self.config.decoder.vocab_size = self._actual_vocab_size
+
+        # cut the [BOS] token at the beginning (super().generate() adds it)
+        assert generated.dim() == 2
+        assert torch.all(generated[:, 0] == bos_token_id)
+        generated = generated[:, 1:]
+
+        return generated
+
     @classmethod
     def from_parameters(
         cls,
@@ -74,7 +155,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         heads,
         src_vocab_size,
         tgt_vocab_size,
-        maximal_pointer,
+        max_src_len,
         decoder_layers=None,
         decoder_hidden=None,
         decoder_heads=None,
@@ -114,7 +195,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         decoder_config = transformers.BertConfig(
             hidden_size=decoder_hidden,
             intermediate_size=4 * decoder_hidden,
-            vocab_size=tgt_vocab_size + maximal_pointer,
+            vocab_size=tgt_vocab_size + max_src_len,
             is_decoder=True,
             num_hidden_layers=decoder_layers,
             num_attention_heads=decoder_heads,
@@ -124,7 +205,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        return cls(encoder, decoder, maximal_pointer=maximal_pointer, model_args=model_args)
+        return cls(encoder, decoder, max_src_len=max_src_len, model_args=model_args)
 
     def forward(
         self,
@@ -209,11 +290,16 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
 
         # mask becomes 0 for all 1 (keep) positions and -1e4 in all 0 (mask) positions
         # NOTE: we can use this mask to additionaly guide the model
+        # batch size is passed using attention_scores tensor instead of input_ids
+        # because while generating, input_ids can be None (using cached encoder_outputs)
         pointer_mask = self._get_pointer_attention_mask(
-            pointer_mask, attention_scores.shape,
+            pointer_mask, attention_scores.shape[0],
         )
+
+        attention_scores_shape = attention_scores.shape
         attention_scores = attention_scores + pointer_mask
         # attention_scores = attention_scores * attention_scores.shape[-1] ** -0.5
+        assert attention_scores.shape == attention_scores_shape, 'attention scores changed shape'
 
         # NOTE: maybe add some kind of normalization between dec_logits?
         decoder_logits = self.lm_head(decoder_hidden_states)  # (bs, tgt_len, tgt_vocab_size)
@@ -232,21 +318,20 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
             ignore_index=self.decoder.embeddings.word_embeddings.padding_idx
         )
 
-    def _get_pointer_attention_mask(self, pointer_attention_mask=None, shape=None, device=None, dtype=None):
+    def _get_pointer_attention_mask(self, pointer_attention_mask=None, batch_size=None, device=None, dtype=None):
         """
         :param pointer_attention_mask: FloatTensor of shape (batch_size, src_seq_len), padding mask for the pointer
             0 for masking and 1 for no masking
-        :param shape: alternative to pointer_attention_mask, tuple (batch_size, src_seq_len, tgt_seq_len)
+        :param shape: alternative to pointer_attention_mask, tuple (batch_size, tgt_seq_len, src_seq_len)
         :param device: torch.device
-        :return: FloatTensor of shape (batch_size, 1, src_seq_len)
+        :return: FloatTensor of shape (batch_size, 1, 1)
             attention mask which equals -1e4 for src padding and special tokens and zero otherwise
         """
         device = device or self.device
         dtype = dtype or self.dtype
 
         if pointer_attention_mask is None:
-            bs, _, src_len = shape
-            return torch.zeros([bs, 1, src_len], device=device, dtype=dtype)
+            return torch.zeros([batch_size, 1, 1], device=device, dtype=dtype)
 
         # We use -1e4 for masking analogous to Transformers library
         # ideally, this number should depend on dtype and should be

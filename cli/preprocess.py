@@ -43,7 +43,7 @@ logging.basicConfig(
     level=logging.INFO,
     stream=sys.stdout,
 )
-logger = logging.getLogger('preprocess.py')
+logger = logging.getLogger(__file__)
 
 
 def parse_args(args=None):

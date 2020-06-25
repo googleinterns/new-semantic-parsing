@@ -39,7 +39,7 @@ logging.basicConfig(
     level=logging.INFO,
     stream=sys.stdout,
 )
-logger = logging.getLogger('train')
+logger = logging.getLogger(__file__)
 
 
 def parse_args(args=None):
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     train_dataset: PointerDataset = datasets['train_dataset']
     eval_dataset: PointerDataset = datasets['valid_dataset']
 
-    maximal_pointer, _ = train_dataset.get_max_len()
+    max_src_len, _ = train_dataset.get_max_len()
 
     try:
         with open(data_dir/'args.toml') as f:
@@ -162,7 +162,7 @@ if __name__ == '__main__':
 
         decoder_config = transformers.BertConfig(
             is_decoder=True,
-            vocab_size=schema_tokenizer.vocab_size + maximal_pointer,
+            vocab_size=schema_tokenizer.vocab_size + max_src_len,
             hidden_size=args.decoder_hidden or encoder.config.hidden_size,
             intermediate_size=ffn_hidden or encoder.config.intermediate_size,
             num_hidden_layers=args.decoder_layers or encoder.config.num_hidden_layers,
@@ -173,7 +173,7 @@ if __name__ == '__main__':
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, maximal_pointer, model_args=args)
+        model = EncoderDecoderWPointerModel(encoder, decoder, max_src_len, model_args=args)
 
     else:  # if args.encoder_model is not specified
         model = EncoderDecoderWPointerModel.from_parameters(
@@ -187,7 +187,7 @@ if __name__ == '__main__':
             tgt_vocab_size=schema_tokenizer.vocab_size,
             encoder_pad_token_id=text_tokenizer.pad_token_id,
             decoder_pad_token_id=schema_tokenizer.pad_token_id,
-            maximal_pointer=maximal_pointer,
+            max_src_len=max_src_len,
             hidden_dropout_prob=args.dropout,
             attention_probs_dropout_prob=args.dropout,
             model_args=args,
