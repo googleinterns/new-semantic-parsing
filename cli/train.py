@@ -31,7 +31,7 @@ from new_semantic_parsing import (
     Seq2SeqTrainer,
 )
 from new_semantic_parsing.data import Seq2SeqDataCollator, PointerDataset
-from new_semantic_parsing import utils, SAVE_FORMAT_VERSION
+from new_semantic_parsing import utils, SAVE_FORMAT_VERSION, optimization
 
 logging.basicConfig(
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
@@ -94,6 +94,8 @@ def parse_args(args=None):
     parser.add_argument('--gradient-accumulation-steps', default=1, type=int)
     parser.add_argument('--batch-size', default=64, type=int)
     parser.add_argument('--max-grad-norm', default=1.0, type=float)
+    parser.add_argument('--num-frozen-encoder-steps', default=0, type=int,
+                        help='number of steps with encoder weights not being updated')
 
     # misc
     parser.add_argument('--wandb-project', default=None)
@@ -223,6 +225,10 @@ if __name__ == '__main__':
 
     collator = Seq2SeqDataCollator(text_tokenizer.pad_token_id, schema_tokenizer.pad_token_id)
 
+    # number of batches not considering gradient accumulation
+    epoch_len = len(train_dataset) // args.batch_size + int(len(train_dataset) % args.batch_size)
+    optimizer_scheduler = optimization.get_optimizers(model, epoch_len, args.num_frozen_encoder_steps, train_args)
+
     os.environ["WANDB_PROJECT"] = args.wandb_project or "new_semantic_parsing"
     trainer = Seq2SeqTrainer(
         model,
@@ -231,6 +237,7 @@ if __name__ == '__main__':
         eval_dataset=eval_dataset,
         data_collator=collator,
         compute_metrics=utils.compute_metrics,
+        optimizers=optimizer_scheduler,
     )
 
     wandb.config.update(args)

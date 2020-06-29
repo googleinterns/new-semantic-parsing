@@ -1,4 +1,5 @@
-# Copyright 2020 The HuggingFace Inc. team and Google LLC
+# Copyright 2020 Google LLC
+# Copyright 2020 The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,66 +58,6 @@ logger = logging.getLogger(__name__)
 
 
 class Seq2SeqTrainer(transformers.Trainer):
-    def get_optimizers(
-        self, num_training_steps: int
-    ) -> Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR]:
-        """
-        Setup the optimizer and the learning rate scheduler.
-
-        Provides different learning rates for the encoder and decoder if args.learning_rate is a dict with
-        keys 'encoder_lr' and 'decoder_lr'
-        """
-        if self.optimizers is not None:
-            return self.optimizers
-        # Prepare optimizer and schedule (linear warmup and decay)
-        no_decay = ["bias", "LayerNorm.weight"]
-
-        lr = self.args.learning_rate
-        if isinstance(lr, float):
-            encoder_lr = decoder_lr = lr
-        elif isinstance(lr, dict):
-            encoder_lr = lr.get('encoder_lr', 0)
-            decoder_lr = lr.get('decoder_lr', 0)
-        else:
-            raise ValueError('learning_rate should be eigher float or dict')
-
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in self.model.decoder.named_parameters() if not any(nd in n for nd in no_decay)],
-                "initial_lr": decoder_lr,
-                "lr": decoder_lr,
-                "weight_decay": self.args.weight_decay,
-            },
-            {
-                "params": [p for n, p in self.model.decoder.named_parameters() if any(nd in n for nd in no_decay)],
-                "initial_lr": decoder_lr,
-                "lr": decoder_lr,
-                "weight_decay": 0.0,
-            },
-        ]
-
-        if encoder_lr > 0:
-            optimizer_grouped_parameters.extend([
-                {
-                    "params": [p for n, p in self.model.encoder.named_parameters() if not any(nd in n for nd in no_decay)],
-                    "initial_lr": encoder_lr,
-                    "lr": encoder_lr,
-                    "weight_decay": self.args.weight_decay,
-                },
-                {
-                    "params": [p for n, p in self.model.encoder.named_parameters() if any(nd in n for nd in no_decay)],
-                    "initial_lr": encoder_lr,
-                    "lr": encoder_lr,
-                    "weight_decay": 0.0,
-                },
-            ])
-
-        optimizer = transformers.AdamW(optimizer_grouped_parameters, eps=self.args.adam_epsilon)
-        scheduler = transformers.get_linear_schedule_with_warmup(
-            optimizer, num_warmup_steps=self.args.warmup_steps, num_training_steps=num_training_steps
-        )
-        return optimizer, scheduler
-
     def train(self, model_path: Optional[str] = None):
         """
         Main training entry point.
