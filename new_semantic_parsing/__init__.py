@@ -15,6 +15,6 @@
 
 SAVE_FORMAT_VERSION = '0.1-nightly-Jun16'
 
-from .encoder_decoder_pointer_model import EncoderDecoderWPointerModel
+from .modeling_encoder_decoder_wpointer import EncoderDecoderWPointerModel
 from .schema_tokenizer import TopSchemaTokenizer
 from .seq2seqtrainer import Seq2SeqTrainer

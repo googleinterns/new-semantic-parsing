@@ -1,4 +1,5 @@
 # Copyright 2020 Google LLC
+# Copyright 2018 The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,40 +21,71 @@ import torch.nn.functional as F
 
 import transformers
 
+from new_semantic_parsing.configuration_encoder_decoder_wpointer import EncoderDecoderWPointerConfig
 
-class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
+
+class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
     """
     Encoder-decoder with pointer model as in arxiv.org/abs/2001.11458
     """
-    def __init__(self, encoder, decoder, max_src_len, model_args=None, **kwargs):
+    config_class = EncoderDecoderWPointerConfig
+    base_model_prefix = "encoder_decoder_wpointer"
+
+    def __init__(self, config=None, encoder=None, decoder=None, max_src_len=None, model_args=None, **kwargs):
         """
+        :param config:
         :param encoder: transformers.PreTrainedModel
         :param decoder: transformers.BertModel, BertFor*Model are not supported
         :param model_args: argparse arguments, architecture parameters
         :param max_src_len: maximum length of the encoder sequence, defines the maximum possible pointer index
         """
-        super().__init__(encoder=encoder, decoder=decoder, **kwargs)
-        self.model_args = model_args
-        self.max_src_len = max_src_len
+        assert config is not None or (
+            encoder is not None and decoder is not None
+        ), "Either a configuration or an Encoder and a decoder has to be provided"
 
-        # unwrap all model_args here for clarity
-        decoder_head_type = getattr(model_args, 'decoder_head_type', 'ffn')
-        use_pointer_bias = getattr(model_args, 'use_pointer_bias', False)
+        if config is None:
+            config = self.config_class(
+                encoder=encoder.config.to_dict(),
+                decoder=decoder.config.to_dict(),
+                max_src_len=max_src_len,
+                model_args=model_args,
+                **kwargs,
+            )
+        assert isinstance(config, self.config_class), "config: {} has to be of type {}".format(
+            config, self.config_class
+        )
+        super().__init__(config)
+
+        if encoder is None:
+            encoder = transformers.AutoModel.from_config(config.encoder)
+
+        if decoder is None:
+            decoder = transformers.AutoModel.from_config(config.decoder)
+
+        self.encoder = encoder
+        self.decoder = decoder
+
+        if self.encoder.get_output_embeddings() is not None:
+            raise RuntimeError('The encoder {} should not have an LM Head. '
+                               'Please use a model without LM Head')
+
+        self.max_src_len = self.config.max_src_len
 
         self.enc_dec_proj = None
-        if encoder.config.hidden_size != decoder.config.hidden_size:
-            self.enc_dec_proj = nn.Linear(encoder.config.hidden_size, decoder.config.hidden_size)
+        if self.encoder.config.hidden_size != self.decoder.config.hidden_size:
+            self.enc_dec_proj = nn.Linear(self.encoder.config.hidden_size,
+                                          self.decoder.config.hidden_size)
 
         # this gives a schema vocab size (without pointer embeddings)
-        self.output_vocab_size = decoder.config.vocab_size - max_src_len
-        if decoder_head_type == 'ffn':
-            head_config = deepcopy(decoder.config)
+        self.output_vocab_size = self.decoder.config.vocab_size - self.config.max_src_len
+        if self.config.decoder_head_type == 'ffn':
+            head_config = deepcopy(self.decoder.config)
             head_config.vocab_size = self.output_vocab_size
 
             # Linear -> activation -> LayerNorm -> Linear
             # from config only .hidden_size, .hidden_act, .layer_norm_eps and .vocab_size are used
             self.lm_head = transformers.modeling_bert.BertLMPredictionHead(head_config)
-        elif model_args.decoder_head_type == 'linear':
+        elif self.config.decoder_head_type == 'linear':
             self.lm_head = nn.Linear(decoder.config.hidden_size, self.output_vocab_size)
         else:
             raise ValueError(model_args.decoder_head_type)
@@ -65,10 +97,23 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
 
         self.decoder_q_proj = nn.Linear(self.decoder.config.hidden_size,
                                         self.decoder.config.hidden_size,
-                                        bias=use_pointer_bias)
+                                        bias=self.config.use_pointer_bias)
 
         # used in .generate to reset decoder vocab size value after generation
         self._actual_vocab_size = self.decoder.config.vocab_size
+
+    def tie_weights(self):
+        # for now no weights tying
+        pass
+
+    def get_encoder(self):
+        return self.encoder
+
+    def get_decoder(self):
+        return self.decoder
+
+    def get_input_embeddings(self):
+        return self.encoder.get_input_embeddings()
 
     def get_output_embeddings(self):
         """
@@ -205,7 +250,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        return cls(encoder, decoder, max_src_len=max_src_len, model_args=model_args)
+        return cls(encoder=encoder, decoder=decoder, max_src_len=max_src_len, model_args=model_args)
 
     def forward(
         self,
@@ -279,7 +324,7 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         )
 
         decoder_hidden_states = decoder_outputs[0]
-
+        assert decoder_hidden_states.shape[-1] == self.decoder.config.hidden_size, 'decoder has classification head'
         # compute pointer scores via attending from decoder hiddens to encoder hiddens
 
         query = self.decoder_q_proj(decoder_hidden_states)  # (bs, tgt_len, decoder_hidden)
@@ -337,3 +382,6 @@ class EncoderDecoderWPointerModel(transformers.EncoderDecoderModel):
         # ideally, this number should depend on dtype and should be
         # bigger for float32 and smaller for float16 and bfloat16
         return ((1. - pointer_attention_mask) * -1e4).unsqueeze(1)
+
+    def _reorder_cache(self, past, beam_idx):
+        return past

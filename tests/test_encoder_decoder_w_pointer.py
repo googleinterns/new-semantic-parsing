@@ -30,6 +30,15 @@ from new_semantic_parsing.data import PointerDataset, Seq2SeqDataCollator
 
 
 class EncoderDecoderWPointerTest(unittest.TestCase):
+    def setUp(self):
+        self.output_dir = next(tempfile._get_candidate_names())
+
+    def tearDown(self):
+        if os.path.exists(self.output_dir):
+            shutil.rmtree(self.output_dir)
+        if os.path.exists('runs'):
+            shutil.rmtree('runs')
+
     def test_shape_on_random_data(self):
         set_seed(42)
 
@@ -59,7 +68,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
 
         # logits are projected into schema vocab and combined with pointer scores
         max_pointer = src_len + 3
-        model = EncoderDecoderWPointerModel(encoder, decoder, max_src_len=max_pointer)
+        model = EncoderDecoderWPointerModel(encoder=encoder, decoder=decoder, max_src_len=max_pointer)
 
         x_enc = torch.randint(0, encoder_config.vocab_size, size=(bs, src_len))
         x_dec = torch.randint(0, decoder_config.vocab_size, size=(bs, tgt_len))
@@ -113,7 +122,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, max_position)
+        model = EncoderDecoderWPointerModel(encoder=encoder, decoder=decoder, max_src_len=max_position)
 
         # similar to real data
         # e.g. '[CLS] Directions to Lowell [SEP]'
@@ -154,7 +163,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, max_position)
+        model = EncoderDecoderWPointerModel(encoder=encoder, decoder=decoder, max_src_len=max_position)
 
         # similar to real data
         src_seq = torch.LongTensor([[1, 6, 12, 15, 2, 0, 0],
@@ -196,7 +205,7 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, max_src_len=7)
+        model = EncoderDecoderWPointerModel(encoder=encoder, decoder=decoder, max_src_len=7)
 
         # similar to real data
         src_seq = torch.LongTensor([[1, 6, 12, 15, 2, 0, 0],
@@ -215,8 +224,44 @@ class EncoderDecoderWPointerTest(unittest.TestCase):
         self.assertEqual(loss.dtype, torch.float32)
         self.assertGreater(loss, 0)
 
+    def test_save_load(self):
+        src_vocab_size = 23
+        tgt_vocab_size = 17
 
-class ModelOverfitTest(unittest.TestCase):
+        model = EncoderDecoderWPointerModel.from_parameters(
+            layers=1,
+            hidden=32,
+            heads=2,
+            src_vocab_size=src_vocab_size,
+            tgt_vocab_size=tgt_vocab_size,
+            max_src_len=7,
+            hidden_dropout_prob=0,
+            attention_probs_dropout_prob=0,
+        )
+
+        input_ids = torch.randint(src_vocab_size, size=(3, 7))
+        tgt_sequence = torch.randint(tgt_vocab_size, size=(3, 11))
+        decoder_input_ids = tgt_sequence[:, :-1].contiguous()
+        labels = tgt_sequence[:, 1:].contiguous()
+
+        expected_output = model(input_ids=input_ids, decoder_input_ids=decoder_input_ids, labels=labels)
+
+        os.mkdir(self.output_dir)
+        model.save_pretrained(self.output_dir)
+
+        loaded_model = EncoderDecoderWPointerModel.from_pretrained(self.output_dir)
+        self.assertDictEqual(model.config.to_dict(), loaded_model.config.to_dict())
+        for i, (p1, p2) in enumerate(zip(model.parameters(), loaded_model.parameters())):
+            self.assertTrue(torch.allclose(p1, p2))
+
+        output = loaded_model(input_ids=input_ids, decoder_input_ids=decoder_input_ids, labels=labels)
+
+        self.assertEqual(len(output), len(expected_output))
+        self.assertTrue(torch.allclose(expected_output[0], output[0]))  # loss
+        self.assertTrue(torch.allclose(expected_output[1], output[1]))  # logits
+
+
+class EncoderDecoderWPointerOverfitTest(unittest.TestCase):
     def setUp(self):
         self.output_dir = next(tempfile._get_candidate_names())
 
@@ -326,7 +371,7 @@ class ModelOverfitTest(unittest.TestCase):
             pad_token_id=schema_tokenizer.pad_token_id,
         ))
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, src_maxlen)
+        model = EncoderDecoderWPointerModel(encoder=encoder, decoder=decoder, max_src_len=src_maxlen)
 
         model, train_out, eval_out = self._train_model(model, dataset, 1e-4, 50)
 

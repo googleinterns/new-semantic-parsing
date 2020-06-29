@@ -173,7 +173,7 @@ if __name__ == '__main__':
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder, decoder, max_src_len, model_args=args)
+        model = EncoderDecoderWPointerModel(encoder=encoder, decoder=decoder, max_src_len=max_src_len, model_args=args)
 
     else:  # if args.encoder_model is not specified
         model = EncoderDecoderWPointerModel.from_parameters(
