@@ -1,4 +1,5 @@
-# Copyright 2020 The HuggingFace Inc. team and Google LLC
+# Copyright 2020 Google LLC
+# Copyright 2018 The HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,11 +17,9 @@ import os
 import json
 from pathlib import Path
 
-import torch
 import transformers
-import numpy as np
 
-from new_semantic_parsing.dataclasses import SchemaItem, InputDataClass
+from new_semantic_parsing.dataclasses import SchemaItem
 
 
 class TopSchemaTokenizer:
@@ -68,6 +67,10 @@ class TopSchemaTokenizer:
     @property
     def special_tokens(self):
         return [self.pad_token, self.bos_token, self.eos_token]
+
+    @property
+    def special_ids(self):
+        return [self.pad_token_id, self.bos_token_id, self.eos_token_id]
 
     def encode(self, schema_text, source_ids, max_length=None, pad_to_max_length=False):
         return self.encode_plus(schema_text, source_ids, max_length, pad_to_max_length).ids
@@ -129,7 +132,7 @@ class TopSchemaTokenizer:
 
         return SchemaItem(schema_ids, pointer_mask)
 
-    def decode(self, ids, source_ids):
+    def decode(self, ids, source_ids, skip_special_tokens=False):
         schema = []
         text_chunk_ids = []  # we combine text into chunks to that it would be easier to merge bpe tokens into words
 
@@ -138,6 +141,9 @@ class TopSchemaTokenizer:
                 if text_chunk_ids:
                     schema.append(self.src_tokenizer.decode(text_chunk_ids))
                     text_chunk_ids = []
+
+                if skip_special_tokens and i in self.special_ids:
+                    continue
                 schema.append(self._itos[i])
             else:
                 position = i - self.vocab_size
@@ -145,10 +151,10 @@ class TopSchemaTokenizer:
         schema = self.detokenize(schema)
         return schema
 
-    def save(self, path, encoder_model_type=None):
+    def save(self, path, encoder_model_type):
         """
         Save schema tokenizer and text tokenizer
-        Optionally, save pre-trained encoder model type - this is a workaround for Transformers #4197
+        Needs pre-trained encoder model type - this is a workaround for Transformers #4197
         """
         _path = Path(path)
         os.makedirs(_path)
@@ -158,9 +164,8 @@ class TopSchemaTokenizer:
 
         self.src_tokenizer.save_pretrained(path)
 
-        if encoder_model_type is not None:
-            with open(_path / 'config.json', 'w') as f:
-                json.dump({'model_type': encoder_model_type}, f)
+        with open(_path / 'config.json', 'w') as f:
+            json.dump({'model_type': encoder_model_type}, f)
 
     @classmethod
     def load(cls, path: str):

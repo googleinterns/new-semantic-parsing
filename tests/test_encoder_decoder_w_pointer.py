@@ -408,17 +408,16 @@ class EncoderDecoderWPointerOverfitTest(unittest.TestCase):
             with self.subTest(msg=f'num_beams={num_beams} (1 is greedy)'):
                 generated = model.generate(
                     input_ids=input_ids,
+                    pointer_mask=pointer_mask,
                     max_length=max_len,
                     num_beams=num_beams,
                     pad_token_id=tokenizer.pad_token_id,
                     bos_token_id=schema_tokenizer.bos_token_id,
                     eos_token_id=schema_tokenizer.eos_token_id,
-                    pointer_mask=pointer_mask,
                 )
 
-                for generated_item, expected_item in zip(generated, labels):
-                    # trim EOS for expected
-                    self.assertTrue(torch.all(generated_item == expected_item[:-1]))
+                # trim EOS for expected
+                self.assertTrue(torch.all(generated[0] == labels[0][:-1]))
 
                 decoded = [schema_tokenizer.decode(generated[i], input_ids[i]) for i in range(len(generated))]
                 pprint(decoded)

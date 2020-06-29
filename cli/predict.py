@@ -1,0 +1,135 @@
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =============================================================================
+import os
+import sys
+import argparse
+import logging
+from typing import List
+from os.path import join as path_join
+
+import torch
+import transformers
+import pandas as pd
+from tqdm.auto import tqdm
+
+from new_semantic_parsing import (
+    EncoderDecoderWPointerModel,
+    TopSchemaTokenizer,
+    Seq2SeqTrainer,
+)
+from new_semantic_parsing.data import Seq2SeqDataCollator, PointerDataset
+from new_semantic_parsing import utils, SAVE_FORMAT_VERSION
+
+
+logging.basicConfig(
+    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    level=logging.INFO,
+    stream=sys.stdout,
+)
+logger = logging.getLogger(__file__)
+
+
+def parse_args(args=None):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--data', required=True, help='path to data file')
+    parser.add_argument('--model', required=True, help='path to a model checkpoint')
+    parser.add_argument('--output-file', required=True,
+                        help='file to save preprocessed data')
+    parser.add_argument('--schema-tokenizer', default=None,
+                        help='path to a saved tokenizer (note that schema tokenizer includes text tokenizer), '
+                             'by default --data/tokenizer is used')
+    parser.add_argument('--batch-size', default=32, type=int)
+    parser.add_argument('--num-beams', default=4, type=int)
+    parser.add_argument('--src-max-len', default=63, type=int,
+                        help='maximum length of the source sequence in tokens, '
+                             '63 for TOP train set and bert-base-cased tokenizer')
+    parser.add_argument('--tgt-max-len', default=98, type=int,
+                        help='maximum length of the target sequence in tokens, '
+                             '98 for TOP train set and bert-base-cased tokenizer')
+    parser.add_argument('--seed', default=34, type=int)
+
+    args = parser.parse_args(args)
+    args.schema_tokenizer = args.schema_tokenizer or path_join(args.model, 'tokenizer')
+
+    if os.path.exists(args.output_file):
+        raise ValueError(f'output file {args.output_file} already exists')
+
+    return args
+
+
+def make_test_dataset(filepath, text_tokenizer, max_len=None):
+    data = pd.read_table(filepath, names=['text', 'tokens', 'schema'])
+
+    text_ids: List[list] = [text_tokenizer.encode(text) for text in tqdm(data.tokens, desc='tokenization')]
+    if max_len is not None:
+        text_ids = [t[:max_len] for t in text_ids]
+
+    text_pointer_masks: List[list] = [utils.get_src_pointer_mask(t, text_tokenizer) for t in text_ids]
+
+    dataset = PointerDataset(source_tensors=text_ids, source_pointer_masks=text_pointer_masks)
+    dataset.torchify()
+
+    return dataset
+
+
+if __name__ == '__main__':
+    args = parse_args()
+
+    logger.info('Loading tokenizers')
+    schema_tokenizer = TopSchemaTokenizer.load(args.schema_tokenizer)
+    text_tokenizer: transformers.PreTrainedTokenizer = schema_tokenizer.src_tokenizer
+
+    logger.info('Loading data')
+    dataset: PointerDataset = make_test_dataset(args.data, text_tokenizer, max_len=args.src_max_len)
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        collate_fn=Seq2SeqDataCollator(pad_id=text_tokenizer.pad_token_id).collate_batch
+    )
+
+    logger.info(f'Maximum source text length {dataset.get_max_len()[0]}')
+
+    model = EncoderDecoderWPointerModel.from_pretrained(args.model)
+    model.eval()
+
+    predictions = []
+
+    for batch in tqdm(dataloader, desc='generation'):
+        assert batch.keys() == {'input_ids', 'pointer_mask', 'attention_mask'}
+
+        prediction_batch: torch.LongTensor = model.generate(
+            **batch,
+            max_length=args.tgt_max_len,
+            num_beams=args.num_beams,
+            pad_token_id=text_tokenizer.pad_token_id,
+            bos_token_id=schema_tokenizer.bos_token_id,
+            eos_token_id=schema_tokenizer.eos_token_id,
+        )
+
+        for i, prediction in enumerate(prediction_batch):
+            prediction_str: str = schema_tokenizer.decode(
+                prediction,
+                batch['input_ids'][i],
+                skip_special_tokens=True,
+            )
+            predictions.append(prediction_str)
+
+    with open(args.output_file, 'w') as f:
+        for pred in predictions:
+            f.write(pred + '\n')
+
+    logger.info(f'Prediction finished, results saved to {args.output_file}')

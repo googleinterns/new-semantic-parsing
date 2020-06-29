@@ -14,10 +14,11 @@
 # =============================================================================
 import os
 import sys
+import json
 import tempfile
 import argparse
 import logging
-from pathlib import Path
+from os.path import join as path_join
 
 import toml
 import torch
@@ -31,7 +32,6 @@ from new_semantic_parsing import (
 )
 from new_semantic_parsing.data import Seq2SeqDataCollator, PointerDataset
 from new_semantic_parsing import utils, SAVE_FORMAT_VERSION
-
 
 logging.basicConfig(
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
@@ -119,22 +119,20 @@ def parse_args(args=None):
 if __name__ == '__main__':
     args = parse_args()
 
-    data_dir = Path(args.data_dir)
-
     logger.info('Loading tokenizers')
     # NOTE: change as_posix to as_windows for Windows
-    schema_tokenizer = TopSchemaTokenizer.load((data_dir/'tokenizer').as_posix())
+    schema_tokenizer = TopSchemaTokenizer.load(path_join(args.data_dir, 'tokenizer'))
     text_tokenizer: transformers.PreTrainedTokenizer = schema_tokenizer.src_tokenizer
 
     logger.info('Loading data')
-    datasets = torch.load(data_dir/'data.pkl')
+    datasets = torch.load(path_join(args.data_dir, 'data.pkl'))
     train_dataset: PointerDataset = datasets['train_dataset']
     eval_dataset: PointerDataset = datasets['valid_dataset']
 
     max_src_len, _ = train_dataset.get_max_len()
 
     try:
-        with open(data_dir/'args.toml') as f:
+        with open(path_join(args.data_dir, 'args.toml')) as f:
             preprocess_args = toml.load(f)
             if preprocess_args['version'] != SAVE_FORMAT_VERSION:
                 logger.warning('Binary data version differs from the current version. '
@@ -243,6 +241,16 @@ if __name__ == '__main__':
     logger.info(train_results)
 
     trainer.save_model(args.output_dir)
+
+    with open(path_join(args.data_dir, 'tokenizer', 'config.json')) as f:
+        model_type = json.load(f)['model_type']
+
+    schema_tokenizer.save(path_join(args.output_dir, 'tokenizer'), encoder_model_type=model_type)
+    logger.info(f'Tokenizer saved in {path_join(args.output_dir, "tokenizer")}')
+
+    with open(path_join(args.output_dir, 'args.toml'), 'w') as f:
+        args_dict = {'version': SAVE_FORMAT_VERSION, **vars(args)}
+        toml.dump(args_dict, f)
 
     if not args.no_evaluation:
         eval_results = trainer.evaluate()

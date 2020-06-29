@@ -135,7 +135,7 @@ class TopSchemaTokenizerTest(unittest.TestCase):
 
         ids = tokenizer.encode(schema_str, source_tokens)
 
-        tokenizer.save(self.tmpdirname)
+        tokenizer.save(self.tmpdirname, encoder_model_type='test_type')
 
         with patch('new_semantic_parsing.schema_tokenizer.transformers.AutoTokenizer.from_pretrained',
                    MagicMock(return_value=TransformersTokenizerMock())):
