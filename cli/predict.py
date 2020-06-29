@@ -60,6 +60,8 @@ def parse_args(args=None):
     parser.add_argument('--tgt-max-len', default=98, type=int,
                         help='maximum length of the target sequence in tokens, '
                              '98 for TOP train set and bert-base-cased tokenizer')
+    parser.add_argument('--device', default=None,
+                        help='Use CUDA if available by default')
     parser.add_argument('--seed', default=34, type=int)
 
     args = parser.parse_args(args)
@@ -67,6 +69,9 @@ def parse_args(args=None):
 
     if os.path.exists(args.output_file):
         raise ValueError(f'output file {args.output_file} already exists')
+
+    if args.device is None:
+        args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     return args
 
@@ -103,30 +108,17 @@ if __name__ == '__main__':
 
     logger.info(f'Maximum source text length {dataset.get_max_len()[0]}')
 
-    model = EncoderDecoderWPointerModel.from_pretrained(args.model)
+    model = EncoderDecoderWPointerModel.from_pretrained(args.model).to(args.device)
     model.eval()
 
-    predictions = []
-
-    for batch in tqdm(dataloader, desc='generation'):
-        assert batch.keys() == {'input_ids', 'pointer_mask', 'attention_mask'}
-
-        prediction_batch: torch.LongTensor = model.generate(
-            **batch,
-            max_length=args.tgt_max_len,
-            num_beams=args.num_beams,
-            pad_token_id=text_tokenizer.pad_token_id,
-            bos_token_id=schema_tokenizer.bos_token_id,
-            eos_token_id=schema_tokenizer.eos_token_id,
-        )
-
-        for i, prediction in enumerate(prediction_batch):
-            prediction_str: str = schema_tokenizer.decode(
-                prediction,
-                batch['input_ids'][i],
-                skip_special_tokens=True,
-            )
-            predictions.append(prediction_str)
+    predictions = utils.iterative_prediction(
+        model=model,
+        dataloader=dataloader,
+        schema_tokenizer=schema_tokenizer,
+        max_len=args.tgt_max_len,
+        num_beams=args.num_beams,
+        device=args.device,
+    )
 
     with open(args.output_file, 'w') as f:
         for pred in predictions:

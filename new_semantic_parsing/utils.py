@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+import torch
 import numpy as np
 import transformers
+
+from tqdm.auto import tqdm
 
 from new_semantic_parsing.dataclasses import Seq2SeqEvalPrediciton
 
@@ -135,3 +138,30 @@ def get_model_type(model_name):
         raise ValueError(f'{model_name} is not found in transformers.CONFIG_MAPPING')
 
     return candidate
+
+
+def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams, device='cpu'):
+    predictions = []
+    text_tokenizer = schema_tokenizer.src_tokenizer
+
+    for batch in tqdm(dataloader, desc='generation'):
+        prediction_batch: torch.LongTensor = model.generate(
+            input_ids=batch['input_ids'].to(device),
+            pointer_mask=batch['pointer_mask'].to(device),
+            attention_mask=batch['attention_mask'].to(device),
+            max_length=max_len,
+            num_beams=num_beams,
+            pad_token_id=text_tokenizer.pad_token_id,
+            bos_token_id=schema_tokenizer.bos_token_id,
+            eos_token_id=schema_tokenizer.eos_token_id,
+        )
+
+        for i, prediction in enumerate(prediction_batch):
+            prediction_str: str = schema_tokenizer.decode(
+                prediction,
+                batch['input_ids'][i],
+                skip_special_tokens=True,
+            )
+            predictions.append(prediction_str)
+
+    return predictions
