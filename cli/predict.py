@@ -103,7 +103,8 @@ if __name__ == '__main__':
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=args.batch_size,
-        collate_fn=Seq2SeqDataCollator(pad_id=text_tokenizer.pad_token_id).collate_batch
+        collate_fn=Seq2SeqDataCollator(pad_id=text_tokenizer.pad_token_id).collate_batch,
+        num_workers=8,
     )
 
     logger.info(f'Maximum source text length {dataset.get_max_len()[0]}')
