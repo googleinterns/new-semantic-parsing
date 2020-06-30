@@ -22,6 +22,7 @@ import torch.nn.functional as F
 import transformers
 
 from new_semantic_parsing.configuration_encoder_decoder_wpointer import EncoderDecoderWPointerConfig
+from new_semantic_parsing.loss import LabelSmoothedCrossEntropy
 
 
 class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
@@ -101,6 +102,10 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
 
         # used in .generate to reset decoder vocab size value after generation
         self._actual_vocab_size = self.decoder.config.vocab_size
+
+        self.label_smoothing_loss_layer = None
+        if self.config.label_smoothing > 0:
+            self.label_smoothing_loss_layer = LabelSmoothedCrossEntropy(eps=self.config.label_smoothing)
 
     def tie_weights(self):
         # for now no weights tying
@@ -353,15 +358,23 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         if labels is None:
             return (combined_logits,) + decoder_outputs + encoder_outputs
 
-        loss = self._compute_loss(combined_logits, labels)
+        loss = self._compute_loss(combined_logits, labels, decoder_attention_mask)
         return (loss, combined_logits) + decoder_outputs + encoder_outputs
 
-    def _compute_loss(self, input, target):
-        return F.cross_entropy(
-            input.view(-1, input.shape[-1]),
-            target.view(-1),
-            ignore_index=self.decoder.embeddings.word_embeddings.padding_idx
-        )
+    def _compute_loss(self, input, target, mask):
+        input = input.view(-1, input.shape[-1])
+        target = target.view(-1)
+        if mask is not None:
+            mask = mask.view(-1)
+
+        if self.label_smoothing_loss_layer is None:
+            return F.cross_entropy(
+                input,
+                target,
+                ignore_index=self.decoder.embeddings.word_embeddings.padding_idx
+            )
+
+        return self.label_smoothing_loss_layer(input, target, mask)
 
     def _get_pointer_attention_mask(self, pointer_attention_mask=None, batch_size=None, device=None, dtype=None):
         """

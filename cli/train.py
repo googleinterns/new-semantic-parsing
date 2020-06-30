@@ -96,6 +96,7 @@ def parse_args(args=None):
     parser.add_argument('--max-grad-norm', default=1.0, type=float)
     parser.add_argument('--num-frozen-encoder-steps', default=0, type=int,
                         help='number of steps with encoder weights not being updated')
+    parser.add_argument('--label-smoothing', default=0.1, type=float)
 
     # misc
     parser.add_argument('--wandb-project', default=None)
@@ -173,7 +174,12 @@ if __name__ == '__main__':
         )
         decoder = transformers.BertModel(decoder_config)
 
-        model = EncoderDecoderWPointerModel(encoder=encoder, decoder=decoder, max_src_len=max_src_len, model_args=args)
+        model = EncoderDecoderWPointerModel(
+            encoder=encoder,
+            decoder=decoder,
+            max_src_len=max_src_len,
+            model_args=args,
+        )
 
     else:  # if args.encoder_model is not specified
         model = EncoderDecoderWPointerModel.from_parameters(
