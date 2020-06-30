@@ -112,7 +112,7 @@ if __name__ == '__main__':
     model = EncoderDecoderWPointerModel.from_pretrained(args.model).to(args.device)
     model.eval()
 
-    _, predictions_str = utils.iterative_prediction(
+    predictions_ids, predictions_str = utils.iterative_prediction(
         model=model,
         dataloader=dataloader,
         schema_tokenizer=schema_tokenizer,
@@ -125,4 +125,25 @@ if __name__ == '__main__':
         for pred in predictions_str:
             f.write(pred + '\n')
 
+    with open(args.output_file + '.ids', 'w') as f:
+        for pred in predictions_ids:
+            f.write(str(pred) + '\n')
+
     logger.info(f'Prediction finished, results saved to {args.output_file}')
+    logger.info(f'Ids saved to {args.output_file + ".ids"}')
+
+    logger.info(f'Computing some metrics...')
+
+    try:
+        data_df = pd.read_table(args.data, names=['text', 'tokens', 'schema'])
+        targets_str = list(data_df.schema)
+
+        exact_match = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
+        logger.info(f'Exact match: {exact_match}')
+
+        exact_match = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
+        logger.info(f'Exact match (ids): {exact_match}')
+
+    except Exception as e:
+        logger.warning(e)
+

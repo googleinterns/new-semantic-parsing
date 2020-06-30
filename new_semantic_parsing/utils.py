@@ -159,6 +159,7 @@ def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams
         )
 
         for i, prediction in enumerate(prediction_batch):
+            prediction = [p for p in prediction.cpu().numpy() if p not in schema_tokenizer.special_ids]
             predictions_ids.append(prediction)
 
             prediction_str: str = schema_tokenizer.decode(
