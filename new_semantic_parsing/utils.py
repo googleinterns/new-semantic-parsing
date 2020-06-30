@@ -142,7 +142,8 @@ def get_model_type(model_name):
 
 
 def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams, device='cpu'):
-    predictions = []
+    predictions_ids = []
+    predictions_str = []
     text_tokenizer = schema_tokenizer.src_tokenizer
 
     for batch in tqdm(dataloader, desc='generation'):
@@ -158,11 +159,22 @@ def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams
         )
 
         for i, prediction in enumerate(prediction_batch):
+            predictions_ids.append(prediction)
+
             prediction_str: str = schema_tokenizer.decode(
                 prediction,
                 batch['input_ids'][i],
                 skip_special_tokens=True,
             )
-            predictions.append(prediction_str)
+            prediction_str = top_postprocess(prediction_str)
+            predictions_str.append(prediction_str)
 
-    return predictions
+    return predictions_ids, predictions_str
+
+
+def top_postprocess(predicted_str):
+    """TOP format expects tokenized words and punctuation"""
+    predicted_str = predicted_str.replace("'s", " 's")
+    predicted_str = predicted_str.replace(".", " .")
+    predicted_str = predicted_str.replace(",", " ,")
+    return predicted_str

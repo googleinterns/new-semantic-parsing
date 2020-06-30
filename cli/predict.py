@@ -112,7 +112,7 @@ if __name__ == '__main__':
     model = EncoderDecoderWPointerModel.from_pretrained(args.model).to(args.device)
     model.eval()
 
-    predictions = utils.iterative_prediction(
+    _, predictions_str = utils.iterative_prediction(
         model=model,
         dataloader=dataloader,
         schema_tokenizer=schema_tokenizer,
@@ -122,7 +122,7 @@ if __name__ == '__main__':
     )
 
     with open(args.output_file, 'w') as f:
-        for pred in predictions:
+        for pred in predictions_str:
             f.write(pred + '\n')
 
     logger.info(f'Prediction finished, results saved to {args.output_file}')
