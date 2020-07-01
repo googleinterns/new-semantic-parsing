@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
     output_dir = args.output_dir
 
-    if output_dir.exists():
+    if os.path.exists(output_dir):
         raise ValueError(f'output_dir {output_dir.as_posix()} already exists')
 
     # File structure:
