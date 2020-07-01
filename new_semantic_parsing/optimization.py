@@ -14,21 +14,16 @@
 # limitations under the License.
 # =============================================================================
 from torch.optim.lr_scheduler import LambdaLR
-import transformers
+import torch
 
 
-def get_optimizers(model, epoch_len, num_frozen_encoder_steps, training_args):
+def get_optimizers(model, num_frozen_encoder_steps, training_args):
     """
     Setup the optimizer and the learning rate scheduler.
 
     Provides different learning rates for the encoder and decoder if args.learning_rate is a dict with
     keys 'encoder_lr' and 'decoder_lr'
     """
-
-    if training_args.max_steps > 0:
-        num_training_steps = training_args.max_steps
-    else:
-        num_training_steps = int(epoch_len // training_args.gradient_accumulation_steps * training_args.num_train_epochs)
 
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ["bias", "LayerNorm.weight"]
@@ -77,12 +72,12 @@ def get_optimizers(model, epoch_len, num_frozen_encoder_steps, training_args):
             },
         ])
 
-    optimizer = transformers.AdamW(optimizer_grouped_parameters, eps=training_args.adam_epsilon)
+    optimizer = torch.optim.Adam(optimizer_grouped_parameters, eps=training_args.adam_epsilon, betas=(0.9, 0.98))
 
-    scheduler = get_linear_schedule_with_warmup_and_gradual_unfreezing(
+    scheduler = get_noam_schedule_with_gradual_unfreezing(
         optimizer,
         num_warmup_steps=training_args.warmup_steps,
-        num_training_steps=num_training_steps,
+        model_size=model.decoder.config.hidden_size,
         num_frozen_encoder_steps=num_frozen_encoder_steps,
     )
 
@@ -122,14 +117,43 @@ def get_linear_schedule_with_warmup_and_gradual_unfreezing(
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
 
+def get_noam_schedule_with_gradual_unfreezing(
+        optimizer,
+        num_warmup_steps,
+        model_size,
+        num_frozen_encoder_steps,
+        last_epoch=1
+    ):
+    """
+    :param optimizer: torch Optimizer where some param groups have 'group_type' key
+        if group_type starts with 'encoder_' it will be frozen for `num_frozen_encoder_steps`
+    :param num_warmup_steps: number of steps for linear warmup from 0 to optimizer.lr
+    :param model_size: hidden size of the model (d_model)
+    :param num_frozen_encoder_steps: number of steps without encoder updates
+    :param last_epoch: The index of last epoch. Default: 1.
+
+    :return: LambdaLR scheduler
+    """
+    set_encoder_requires_grad(optimizer.param_groups, False)
+
+    def lr_lambda(current_step):
+        if current_step >= num_frozen_encoder_steps:
+            set_encoder_requires_grad(optimizer.param_groups, True)
+
+        scale = model_size ** -0.5 * min(current_step ** (-0.5), current_step * num_warmup_steps ** (-1.5))
+        return scale
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
 def set_encoder_requires_grad(param_groups, value: bool):
     for param_group in param_groups:
         group_type = param_group.get('group_type', '')
         if not group_type.startswith('encoder'):
             continue
 
-    for param in param_group["params"]:
-        if param.requires_grad is value:
-            # if value has already been set
-            return
-        param.requires_grad = value
+        for param in param_group["params"]:
+            if param.requires_grad is value:
+                # if value has already been set
+                return
+            param.requires_grad = value

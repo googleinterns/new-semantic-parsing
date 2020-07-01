@@ -91,7 +91,7 @@ def parse_args(args=None):
     parser.add_argument('--weight-decay', default=0, type=float)
     parser.add_argument('--dropout', default=0.1, type=float,
                         help='dropout amount for the encoder and decoder, default value 0.1 is from Transformers')
-    parser.add_argument('--warmup-steps', default=0, type=int)
+    parser.add_argument('--warmup-steps', default=1, type=int)
     parser.add_argument('--gradient-accumulation-steps', default=1, type=int)
     parser.add_argument('--batch-size', default=64, type=int)
     parser.add_argument('--max-grad-norm', default=1.0, type=float)
@@ -225,6 +225,7 @@ if __name__ == '__main__':
         save_steps=1000,
         save_total_limit=1,
         fp16=False,
+        adam_epsilon=1e-9,
         local_rank=-1,
     )
 
@@ -232,7 +233,7 @@ if __name__ == '__main__':
 
     # number of batches not considering gradient accumulation
     epoch_len = len(train_dataset) // args.batch_size + int(len(train_dataset) % args.batch_size)
-    optimizer_scheduler = optimization.get_optimizers(model, epoch_len, args.num_frozen_encoder_steps, train_args)
+    optimizer_scheduler = optimization.get_optimizers(model, args.num_frozen_encoder_steps, train_args)
 
     meter = utils.MetricsMeter(stop_token_ids=[schema_tokenizer.eos_token_id, schema_tokenizer.pad_token_id])
 
