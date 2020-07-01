@@ -108,7 +108,7 @@ if __name__ == '__main__':
     output_dir = args.output_dir
 
     if os.path.exists(output_dir):
-        raise ValueError(f'output_dir {output_dir.as_posix()} already exists')
+        raise ValueError(f'output_dir {output_dir} already exists')
 
     # File structure:
     # that's text\tthat 's text\t[IN:UNSUPPORTED that 's text]
@@ -135,7 +135,7 @@ if __name__ == '__main__':
     valid_dataset = make_dataset(os.path.join(args.data, 'eval.tsv'), text_tokenizer, schema_tokenizer)
     test_dataset = make_dataset(os.path.join(args.data, 'test.tsv'), text_tokenizer, schema_tokenizer)
 
-    logger.info(f'Saving everything to {output_dir.as_posix()}')
+    logger.info(f'Saving everything to {output_dir}')
     os.makedirs(args.output_dir)
 
     with open(path_join(output_dir, 'args.toml'), 'w') as f:

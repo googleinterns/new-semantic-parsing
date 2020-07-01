@@ -126,7 +126,6 @@ if __name__ == '__main__':
         raise ValueError(f'output_dir {args.output_dir} already exists')
 
     logger.info('Loading tokenizers')
-    # NOTE: change as_posix to as_windows for Windows
     schema_tokenizer = TopSchemaTokenizer.load(path_join(args.data_dir, 'tokenizer'))
     text_tokenizer: transformers.PreTrainedTokenizer = schema_tokenizer.src_tokenizer
 
