@@ -24,6 +24,7 @@ import toml
 import torch
 import wandb
 import transformers
+import pandas as pd
 
 from new_semantic_parsing import (
     EncoderDecoderWPointerModel,
@@ -100,7 +101,6 @@ def parse_args(args=None):
 
     # misc
     parser.add_argument('--wandb-project', default=None)
-    parser.add_argument('--no-evaluation', default=False, action='store_true')
     parser.add_argument('--log-every', default=100, type=int)
 
     args = parser.parse_args(args)
@@ -121,6 +121,9 @@ def parse_args(args=None):
 
 if __name__ == '__main__':
     args = parse_args()
+
+    if os.path.exists(args.output_dir):
+        raise ValueError(f'output_dir {args.output_dir} already exists')
 
     logger.info('Loading tokenizers')
     # NOTE: change as_posix to as_windows for Windows
@@ -205,10 +208,6 @@ if __name__ == '__main__':
     if args.encoder_lr is not None and args.decoder_lr is not None:
         lr = {'encoder_lr': args.encoder_lr, 'decoder_lr': args.decoder_lr}
 
-    if args.no_evaluation:
-        # to get the metrics
-        eval_dataset = train_dataset
-
     train_args = transformers.TrainingArguments(
         output_dir=args.output_dir,
         do_train=True,
@@ -235,14 +234,20 @@ if __name__ == '__main__':
     epoch_len = len(train_dataset) // args.batch_size + int(len(train_dataset) % args.batch_size)
     optimizer_scheduler = optimization.get_optimizers(model, epoch_len, args.num_frozen_encoder_steps, train_args)
 
+    meter = utils.MetricsMeter(stop_token_ids=[schema_tokenizer.eos_token_id, schema_tokenizer.pad_token_id])
+
     os.environ["WANDB_PROJECT"] = args.wandb_project or "new_semantic_parsing"
+
+    # force tensorboard off
+    transformers.trainer.is_tensorboard_available = lambda: False
+
     trainer = Seq2SeqTrainer(
         model,
         train_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         data_collator=collator,
-        compute_metrics=utils.compute_metrics,
+        compute_metrics=meter.compute_metrics,
         optimizers=optimizer_scheduler,
     )
 
@@ -265,8 +270,61 @@ if __name__ == '__main__':
         args_dict = {'version': SAVE_FORMAT_VERSION, **vars(args)}
         toml.dump(args_dict, f)
 
-    if not args.no_evaluation:
-        eval_results = trainer.evaluate()
-        logger.info(eval_results)
+    model.eval()
+
+    eval_results = trainer.evaluate()
+    logger.info('Final eval results')
+    logger.info(eval_results)
 
     logger.info('Training finished!')
+
+    logger.info('Generating predictions')
+    dataloader = torch.utils.data.DataLoader(
+        eval_dataset,
+        batch_size=args.batch_size,
+        collate_fn=Seq2SeqDataCollator(pad_id=text_tokenizer.pad_token_id).collate_batch,
+        num_workers=8,
+    )
+
+    predictions_ids, predictions_str = utils.iterative_prediction(
+        model=model,
+        dataloader=dataloader,
+        schema_tokenizer=schema_tokenizer,
+        max_len=63,
+        num_beams=1,
+        device=trainer.args.device,
+    )
+
+    logger.info('Computing inference-time metrics')
+
+    data_df = pd.read_table('data/top-dataset-semantic-parsing-toy/eval.tsv', names=['text', 'tokens', 'schema'])
+    targets_str = list(data_df.schema)
+
+    predictions_str = [schema_tokenizer.postprocess(p) for p in predictions_str]
+    exact_match = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
+    logger.info(f'Exact match (str): {exact_match}')
+
+    targets_ids = [list(ex.labels.numpy()[:-1]) for ex in eval_dataset]
+    exact_match_ids = sum(int(str(p) == str(l)) for p, l in zip(predictions_ids, targets_ids)) / len(targets_str)
+    logger.info(f'Exact match (ids): {exact_match_ids}')
+
+    logger.info('Checking for mismatches between ids and str')
+
+    n_errors = 0
+
+    for i in range(len(targets_str)):
+        if str(predictions_ids[i]) == str(eval_dataset[i].labels.numpy()[:-1]) and predictions_str[i] != targets_str[i]:
+            n_errors += 1
+            logger.info('Mismatch ', n_errors)
+
+            logger.info('Target str: ', targets_str[i])
+            logger.info('Decoded   : ', predictions_str[i])
+
+            logger.info('Target ids : ', eval_dataset[i].labels)
+            logger.info('Predictions: ', predictions_ids[i])
+            logger.info('')
+
+    if n_errors > 0:
+        logger.info(f'Mismatches       : {n_errors}')
+        logger.info(f'Exact match (str): {exact_match}')
+        logger.info(f'Exact match (ids): {exact_match_ids}')

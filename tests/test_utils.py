@@ -53,7 +53,7 @@ class TestGetMetrics(unittest.TestCase):
     def test_metrics(self):
         x = [np.array([1, 2, 3, 4, 5, 6]),
              np.array([1, 3, 5, 7, 9]),
-             np.array([19, 18, 17, 16, 18, 13, 19])]
+             np.array([19, 18, 17, 16, 18, 5, 19])]
 
         x_logits = []
         for i, x_i in enumerate(x):
@@ -62,15 +62,17 @@ class TestGetMetrics(unittest.TestCase):
                 logit[j, x_ij] = 1.
             x_logits.append(logit)
 
-        y = [np.array([3, 2, 8, 4, 5, 5]),
+        y = [np.array([3, 2, 8, 4, 5, 50]),
              np.array([1, 3, 5, 7, 9]),
-             np.array([19, 8, 17, 16, 18, 5, 1])]
+             np.array([19, 18, 17, 16, 18, 5, 1])]
 
         # NOTE: we expect micro averaging
-        expected_accuracy = 0.66666666666
-        expected_exact_match = 0.33333333333
+        expected_accuracy = 0.777777777777  # not truncated
+        expected_exact_match = 0.66666666666  # truncated until 5
 
-        metrics = utils.compute_metrics(Seq2SeqEvalPrediciton(x_logits, y))
+        meter = utils.MetricsMeter(stop_token_ids=[5])
+
+        metrics = meter.compute_metrics(Seq2SeqEvalPrediciton(x_logits, y))
 
         self.assertAlmostEqual(metrics['accuracy'], expected_accuracy)
         self.assertAlmostEqual(metrics['exact_match'], expected_exact_match)
@@ -96,10 +98,11 @@ class TestGetMetrics(unittest.TestCase):
 
         # NOTE: we expect micro averaging
         expected_accuracy = 0.91666666666
-        expected_exact_match = 0.66666666666
+        expected_exact_match = 0.33333333333  # mask is not used for EM, only truncation
 
-        metrics = utils.compute_metrics(Seq2SeqEvalPrediciton(x_logits, y, m))
+        meter = utils.MetricsMeter(stop_token_ids=[5])
+
+        metrics = meter.compute_metrics(Seq2SeqEvalPrediciton(x_logits, y, m))
 
         self.assertAlmostEqual(metrics['accuracy'], expected_accuracy)
         self.assertAlmostEqual(metrics['exact_match'], expected_exact_match)
-

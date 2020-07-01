@@ -25,7 +25,7 @@ import numpy as np
 
 from new_semantic_parsing import EncoderDecoderWPointerModel, Seq2SeqTrainer
 from new_semantic_parsing.schema_tokenizer import TopSchemaTokenizer
-from new_semantic_parsing.utils import compute_metrics, get_src_pointer_mask, set_seed
+from new_semantic_parsing.utils import MetricsMeter, get_src_pointer_mask, set_seed
 from new_semantic_parsing.data import PointerDataset, Seq2SeqDataCollator
 
 
@@ -313,13 +313,15 @@ class EncoderDecoderWPointerOverfitTest(unittest.TestCase):
         )
         transformers.trainer.is_wandb_available = lambda: False  # workaround to turn off wandb
 
+        meter = MetricsMeter(stop_token_ids=[])
+
         trainer = Seq2SeqTrainer(
             model,
             train_args,
             train_dataset=dataset,
             data_collator=Seq2SeqDataCollator(model.encoder.embeddings.word_embeddings.padding_idx),
             eval_dataset=dataset,
-            compute_metrics=compute_metrics,
+            compute_metrics=meter.compute_metrics,
         )
         # a trick to reduce the amount of logging
         trainer.is_local_master = lambda: False

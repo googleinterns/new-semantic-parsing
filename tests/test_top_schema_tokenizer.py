@@ -161,6 +161,35 @@ class TopSchemaTokenizerTest(unittest.TestCase):
 
         self.assertEqual(schema_str, schema_decoded)
 
-    # def test_batch_encode_plus(self):
-    # def test_batch_encode_plus_return_tensors(self):
-    #     # remember to check dtypes
+    def test_postprocess_punct(self):
+        text = "[What is this?]"
+        expected = "[What is this ?]"
+        postprocessed = TopSchemaTokenizer.postprocess(text)
+        self.assertSequenceEqual(expected, postprocessed)
+
+        text = "[This is nothing ! ]"
+        expected ="[This is nothing ! ]"
+        postprocessed = TopSchemaTokenizer.postprocess(text)
+        self.assertSequenceEqual(expected, postprocessed)
+
+        text = "7;45"
+        expected ="7 ; 45"
+        postprocessed = TopSchemaTokenizer.postprocess(text)
+        self.assertSequenceEqual(expected, postprocessed)
+
+    def test_postprocess_apostrophe(self):
+        text = "[What's]"
+        expected = "[What 's]"
+        postprocessed = TopSchemaTokenizer.postprocess(text)
+        self.assertSequenceEqual(expected, postprocessed)
+
+        text = "[I didn't do this.]"
+        expected = "[I didn't do this .]"
+        postprocessed = TopSchemaTokenizer.postprocess(text)
+
+        self.assertSequenceEqual(expected, postprocessed)
+
+        text = "[[Your ] ' s]"
+        expected = "[[Your ] 's]"
+        postprocessed = TopSchemaTokenizer.postprocess(text)
+        self.assertSequenceEqual(expected, postprocessed)

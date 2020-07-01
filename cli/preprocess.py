@@ -30,7 +30,6 @@ import argparse
 # limitations under the License.
 # =============================================================================
 import logging
-from pathlib import Path
 from functools import reduce
 from typing import List
 from os.path import join as path_join
@@ -106,14 +105,14 @@ if __name__ == '__main__':
 
     utils.set_seed(args.seed)
 
-    output_dir = Path(args.output_dir)
+    output_dir = args.output_dir
 
     if output_dir.exists():
         raise ValueError(f'output_dir {output_dir.as_posix()} already exists')
 
     # File structure:
     # that's text\tthat 's text\t[IN:UNSUPPORTED that 's text]
-    train_data = pd.read_table(Path(args.data)/'train.tsv', names=['text', 'tokens', 'schema'])
+    train_data = pd.read_table(path_join(args.data, 'train.tsv'), names=['text', 'tokens', 'schema'])
 
     logger.info('Getting schema vocabulary')
 
@@ -137,15 +136,15 @@ if __name__ == '__main__':
     test_dataset = make_dataset(os.path.join(args.data, 'test.tsv'), text_tokenizer, schema_tokenizer)
 
     logger.info(f'Saving everything to {output_dir.as_posix()}')
-    os.makedirs(args.output_dirs)
+    os.makedirs(args.output_dir)
 
-    with open(output_dir/'args.toml', 'w') as f:
+    with open(path_join(output_dir, 'args.toml'), 'w') as f:
         args_dict = {'version': SAVE_FORMAT_VERSION, **vars(args)}
         toml.dump(args_dict, f)
 
     # text tokenizer is saved along with schema_tokenizer
     model_type = None
-    if not Path(args.text_tokenizer).exists():
+    if not os.path.exists(args.text_tokenizer):
         model_type = utils.get_model_type(args.text_tokenizer)
 
     schema_tokenizer.save(path_join(output_dir, 'tokenizer'), encoder_model_type=model_type)
@@ -157,4 +156,4 @@ if __name__ == '__main__':
         'version': SAVE_FORMAT_VERSION,
     }
 
-    torch.save(data_state, output_dir/'data.pkl')
+    torch.save(data_state, path_join(output_dir, 'data.pkl'))

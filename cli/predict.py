@@ -27,10 +27,10 @@ from tqdm.auto import tqdm
 from new_semantic_parsing import (
     EncoderDecoderWPointerModel,
     TopSchemaTokenizer,
-    Seq2SeqTrainer,
 )
 from new_semantic_parsing.data import Seq2SeqDataCollator, PointerDataset
-from new_semantic_parsing import utils, SAVE_FORMAT_VERSION
+from new_semantic_parsing import utils
+from cli.preprocess import make_dataset
 
 
 logging.basicConfig(
@@ -121,6 +121,9 @@ if __name__ == '__main__':
         device=args.device,
     )
 
+    # predictions should be postprocessed for evaluation (reproduce TOP format tokenization)
+    predictions_str = [schema_tokenizer.postprocess(p) for p in predictions_str]
+
     with open(args.output_file, 'w') as f:
         for pred in predictions_str:
             f.write(pred + '\n')
@@ -136,14 +139,15 @@ if __name__ == '__main__':
 
     try:
         data_df = pd.read_table(args.data, names=['text', 'tokens', 'schema'])
+        dataset_with_labels = make_dataset(args.data, text_tokenizer, schema_tokenizer)
         targets_str = list(data_df.schema)
 
-        exact_match = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
-        logger.info(f'Exact match: {exact_match}')
+        exact_match_str = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
+        logger.info(f'Exact match: {exact_match_str}')
 
-        exact_match = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
-        logger.info(f'Exact match (ids): {exact_match}')
+        targets_ids = [list(ex.labels.numpy()[:-1]) for ex in dataset_with_labels]
+        exact_match_ids = sum(int(str(p) == str(l)) for p, l in zip(predictions_ids, targets_ids)) / len(targets_str)
+        logger.info(f'Exact match (ids): {exact_match_ids}')
 
-    except Exception as e:
+    except FileNotFoundError as e:
         logger.warning(e)
-

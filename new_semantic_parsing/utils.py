@@ -45,34 +45,59 @@ def get_src_pointer_mask(input_ids, tokenizer: transformers.PreTrainedTokenizer)
     return mask
 
 
-def compute_metrics(eval_prediction: Seq2SeqEvalPrediciton):
-    """
-    :param eval_prediction: each field of the dataclass corresponds to a list,
-        list element is a single example
-    :return:
-    """
-    if len(eval_prediction.predictions[0].shape) != 2:
-        raise ValueError('eval_prediction.predictions should be a list of predictions, '
-                         'expected prediction shape to be (seq_len, vocab_dim), got '
-                         f'{eval_prediction.predictions[0].shape} instead')
+class MetricsMeter:
+    def __init__(self, stop_token_ids):
+        """
+        :param stop_tokens: tokens after which decoding stops (typically EOS and PAD)
+        """
+        self.stop_token_ids = stop_token_ids
 
-    predictions = [np.argmax(p, axis=-1) for p in eval_prediction.predictions]
-    labels = eval_prediction.label_ids
+    def _truncate(self, pred):
+        i = 0
+        for i, idx in enumerate(pred):
+            if idx in self.stop_token_ids:
+                break
+        return pred[:i]
 
-    label_masks = eval_prediction.label_masks or [np.ones_like(p) for p in predictions]
+    def compute_metrics(self, eval_prediction: Seq2SeqEvalPrediciton):
+        """
+        :param eval_prediction: each field of the dataclass corresponds to a list,
+            list element is a single example
+        :return:
+            dict with keys
+                `accuracy` - fraction of correctly predicted tokens under the mask
+                `exact_match` - fraction of correctly predicted sequences (sequences are truncated after EOS)
+        """
+        if len(eval_prediction.predictions[0].shape) != 2:
+            raise ValueError('eval_prediction.predictions should be a list of predictions, '
+                             'expected prediction shape to be (seq_len, vocab_dim), got '
+                             f'{eval_prediction.predictions[0].shape} instead')
 
-    total_tokens = sum(np.sum(m) for m in label_masks)
-    # (p == l) & (1 ^ m) <=> correct tokens which are not masked (masked tokens have mask == 0)
-    correct_tokens = sum(np.sum((p == l) & m) for p, l, m in zip(predictions, labels, label_masks))
-    accuracy = correct_tokens / total_tokens
+        predictions = [np.argmax(p, axis=-1) for p in eval_prediction.predictions]
+        labels = eval_prediction.label_ids
 
-    # (p == l) | (1 ^ m) <=> correct tokens or masked tokens (masked tokens have mask == 0)
-    exact_match = sum(np.all((p == l) | (1 ^ m)) for p, l, m in zip(predictions, labels, label_masks)) / len(predictions)
+        # accuracy is computed under a known mask
+        # a bit more precisionish behavior, than just accuracy (can be whatather outside the mask)
+        label_masks = eval_prediction.label_masks or [np.ones_like(p) for p in predictions]
 
-    return {
-        'accuracy': accuracy,
-        'exact_match': exact_match,
-    }
+        total_tokens = sum(np.sum(m) for m in label_masks)
+        # (p == l) & (1 ^ m) <=> correct tokens which are not masked (masked tokens have mask == 0)
+        accuracy = sum(np.sum((p == l) & m) for p, l, m in zip(predictions, labels, label_masks))
+        accuracy /= total_tokens
+
+        # trauncate until EOS token
+        # for exact match we consider all tokens until EOS/PAD
+        # this is closer to inference setup when generation stops after EOS/PAD
+        truncated_predictions = [self._truncate(p) for p in predictions]
+        truncated_labels = [self._truncate(l) for l in labels]
+
+        exact_match = sum(np.all(p == l) for p, l in zip(truncated_predictions, truncated_labels))
+        exact_match /= len(truncated_predictions)
+
+        return {
+            'accuracy': accuracy,
+            'exact_match': exact_match,
+        }
 
 
 def set_seed(seed):
@@ -167,15 +192,6 @@ def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams
                 batch['input_ids'][i],
                 skip_special_tokens=True,
             )
-            prediction_str = top_postprocess(prediction_str)
             predictions_str.append(prediction_str)
 
     return predictions_ids, predictions_str
-
-
-def top_postprocess(predicted_str):
-    """TOP format expects tokenized words and punctuation"""
-    predicted_str = predicted_str.replace("'s", " 's")
-    predicted_str = predicted_str.replace(".", " .")
-    predicted_str = predicted_str.replace(",", " ,")
-    return predicted_str

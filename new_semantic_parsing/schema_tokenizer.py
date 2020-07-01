@@ -15,7 +15,7 @@
 # =============================================================================
 import os
 import json
-from pathlib import Path
+from os.path import join as path_join
 
 import transformers
 
@@ -132,7 +132,7 @@ class TopSchemaTokenizer:
 
         return SchemaItem(schema_ids, pointer_mask)
 
-    def decode(self, ids, source_ids, skip_special_tokens=False):
+    def decode(self, ids, source_ids, skip_special_tokens=True):
         schema = []
         text_chunk_ids = []  # we combine text into chunks to that it would be easier to merge bpe tokens into words
 
@@ -156,22 +156,19 @@ class TopSchemaTokenizer:
         Save schema tokenizer and text tokenizer
         Needs pre-trained encoder model type - this is a workaround for Transformers #4197
         """
-        _path = Path(path)
-        os.makedirs(_path)
+        os.makedirs(path)
 
-        with open(_path / 'schema_vocab.txt', 'w') as f:
+        with open(path_join(path, 'schema_vocab.txt'), 'w') as f:
             f.write('\n'.join(self._vocab))
 
         self.src_tokenizer.save_pretrained(path)
 
-        with open(_path / 'config.json', 'w') as f:
+        with open(path_join(path, 'config.json'), 'w') as f:
             json.dump({'model_type': encoder_model_type}, f)
 
     @classmethod
     def load(cls, path: str):
-        if isinstance(path, Path):
-            raise ValueError('AutoTokenizer.from_pretrained does not support Path')
-        with open(Path(path)/'schema_vocab.txt') as f:
+        with open(path_join(path, 'schema_vocab.txt')) as f:
             schema_vocab = set(f.read().strip('\n').split('\n'))
 
         text_tokenizer = transformers.AutoTokenizer.from_pretrained(path)
@@ -203,3 +200,61 @@ class TopSchemaTokenizer:
                 text += token + ' '
 
         return text.strip(' ')
+
+    @staticmethod
+    def postprocess(text):
+        """TOP format expects tokenized words and punctuation"""
+        stripped_symbols = ['.', ',', '?', '!', ';']
+        postprocessed = text[0]
+
+        is_abbr = False
+
+        for i in range(1, len(text)):
+            # always just append the last symbol, as it is ]
+            if i >= len(text) - 1:
+                postprocessed += text[i]
+                continue
+
+            # do not strip dots for capital latters
+            # e.g. D.C.
+            if text[i-1].isupper() and text[i] == '.':
+                is_abbr = True
+                postprocessed += text[i]
+                continue
+
+            # do not strip dots for capital latters
+            # e.g. D. C . -> D.C.
+            # NOTE: it should be "D.C ." to match the TOP format
+            if is_abbr and text[i-1] == '.' and text[i] == ' ' and text[i+1].isupper():
+                continue
+
+            # all abbreviations should be hadled upper
+            is_abbr = False
+
+            # strip punctuation
+            if text[i-1] != ' ' and text[i] in stripped_symbols:
+                postprocessed += ' ' + text[i]
+                continue
+
+            if text[i-1] in stripped_symbols and text[i] != ' ':
+                postprocessed += ' ' + text[i]
+                continue
+
+            # strip apostrophe for posessive nouns
+            if text[i-1] != ' ' and text[i:i+2] == "'s":
+                postprocessed += ' ' + text[i]
+                continue
+
+            # merge apostrophe with the next symbol
+            # used when posessive noun is a slot value
+            # e.g. "[SL:CONTACT Vlad] ' s"
+            if text[i-1] == "'" and text[i] == ' ' and text[i+1] == "s":
+                continue
+
+            postprocessed += text[i]
+
+        # time
+        postprocessed = postprocessed.replace('a . m', 'a.m')
+        postprocessed = postprocessed.replace('p . m', 'p.m')
+
+        return postprocessed
