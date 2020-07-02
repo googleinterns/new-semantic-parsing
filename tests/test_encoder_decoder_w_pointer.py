@@ -319,7 +319,7 @@ class EncoderDecoderWPointerOverfitTest(unittest.TestCase):
             model,
             train_args,
             train_dataset=dataset,
-            data_collator=Seq2SeqDataCollator(model.encoder.embeddings.word_embeddings.padding_idx),
+            data_collator=Seq2SeqDataCollator(model.encoder.embeddings.word_embeddings.padding_idx).collate_batch,
             eval_dataset=dataset,
             compute_metrics=meter.compute_metrics,
         )
@@ -428,44 +428,46 @@ class EncoderDecoderWPointerOverfitTest(unittest.TestCase):
         set_seed(42)
         # NOTE: slow test
 
-        dataset, tokenizer, schema_tokenizer = self._prepare_data()
+        for model in MODELS:
+            with self.subTest(model):
+                dataset, tokenizer, schema_tokenizer = self._prepare_data(model)
 
-        src_maxlen, _ = dataset.get_max_len()
+                src_maxlen, _ = dataset.get_max_len()
 
-        model = EncoderDecoderWPointerModel.from_parameters(
-            layers=3, hidden=128, heads=2, max_src_len=src_maxlen,
-            src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
-        )
+                model = EncoderDecoderWPointerModel.from_parameters(
+                    layers=3, hidden=128, heads=2, max_src_len=src_maxlen,
+                    src_vocab_size=tokenizer.vocab_size, tgt_vocab_size=schema_tokenizer.vocab_size
+                )
 
-        model, _, _ = self._train_model(model, dataset, 1e-3, 30)
+                model, _, _ = self._train_model(model, dataset, 1e-3, 30)
 
         dl = torch.utils.data.DataLoader(
             dataset, batch_size=2, collate_fn=Seq2SeqDataCollator(model.encoder.embeddings.word_embeddings.padding_idx).collate_batch
         )
 
-        example = next(iter(dl))
-        input_ids = example['input_ids']
-        attention_mask = example['attention_mask']
-        labels = example['labels']
-        pointer_mask = example['pointer_mask']
-        max_len = max(map(len, example['decoder_input_ids']))
+                example = next(iter(dl))
+                input_ids = example['input_ids']
+                attention_mask = example['attention_mask']
+                labels = example['labels']
+                pointer_mask = example['pointer_mask']
+                max_len = max(map(len, example['decoder_input_ids']))
 
-        for num_beams in (1, 4):
-            with self.subTest(msg=f'num_beams={num_beams} (1 is greedy)'):
-                generated = model.generate(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    max_length=max_len,
-                    num_beams=num_beams,
-                    pad_token_id=tokenizer.pad_token_id,
-                    bos_token_id=schema_tokenizer.bos_token_id,
-                    eos_token_id=schema_tokenizer.eos_token_id,
-                    pointer_mask=pointer_mask,
-                )
+                for num_beams in (1, 4):
+                    with self.subTest(msg=f'num_beams={num_beams} (1 is greedy)'):
+                        generated = model.generate(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            max_length=max_len,
+                            num_beams=num_beams,
+                            pad_token_id=tokenizer.pad_token_id,
+                            bos_token_id=schema_tokenizer.bos_token_id,
+                            eos_token_id=schema_tokenizer.eos_token_id,
+                            pointer_mask=pointer_mask,
+                        )
 
-                for generated_item, expected_item in zip(generated, labels):
-                    # trim EOS for expected
-                    self.assertTrue(torch.all(generated_item == expected_item[:-1]))
+                        for generated_item, expected_item in zip(generated, labels):
+                            # trim EOS for expected
+                            self.assertTrue(torch.all(generated_item == expected_item[:-1]))
 
-                decoded = [schema_tokenizer.decode(generated[i], input_ids[i]) for i in range(len(generated))]
-                pprint(decoded)
+                        decoded = [schema_tokenizer.decode(generated[i], input_ids[i]) for i in range(len(generated))]
+                        pprint(decoded)
