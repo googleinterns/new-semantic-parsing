@@ -39,7 +39,7 @@ from transformers.trainer_utils import (
     PredictionOutput,
     TrainOutput,
 )
-from transformers.trainer import is_apex_available, is_tpu_available
+from transformers.trainer import is_apex_available, is_torch_tpu_available
 
 from new_semantic_parsing.dataclasses import Seq2SeqEvalPrediciton
 
@@ -48,7 +48,7 @@ if is_apex_available():
     from apex import amp
 
 
-if is_tpu_available():
+if is_torch_tpu_available():
     import torch_xla.core.xla_model as xm
     import torch_xla.debug.metrics as met
     import torch_xla.distributed.parallel_loader as pl
@@ -115,7 +115,7 @@ class Seq2SeqTrainer(transformers.Trainer):
             self.tb_writer.add_hparams(self.args.to_sanitized_dict(), metric_dict={})
 
         # Train!
-        if is_tpu_available():
+        if is_torch_tpu_available():
             total_train_batch_size = self.args.train_batch_size * xm.xrt_world_size()
         else:
             total_train_batch_size = (
@@ -163,7 +163,7 @@ class Seq2SeqTrainer(transformers.Trainer):
             if isinstance(train_dataloader, DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
                 train_dataloader.sampler.set_epoch(epoch)
 
-            if is_tpu_available():
+            if is_torch_tpu_available():
                 parallel_loader = pl.ParallelLoader(train_dataloader, [self.args.device]).per_device_loader(
                     self.args.device
                 )
@@ -191,7 +191,7 @@ class Seq2SeqTrainer(transformers.Trainer):
                     else:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
 
-                    if is_tpu_available():
+                    if is_torch_tpu_available():
                         xm.optimizer_step(optimizer)
                     else:
                         optimizer.step()
@@ -246,7 +246,7 @@ class Seq2SeqTrainer(transformers.Trainer):
                         if self.is_world_master():
                             self._rotate_checkpoints()
 
-                        if is_tpu_available():
+                        if is_torch_tpu_available():
                             xm.rendezvous("saving_optimizer_states")
                             xm.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
                             xm.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
@@ -323,7 +323,7 @@ class Seq2SeqTrainer(transformers.Trainer):
         label_masks: List[torch.Tensor] = []
         model.eval()
 
-        if is_tpu_available():
+        if is_torch_tpu_available():
             dataloader = pl.ParallelLoader(dataloader, [self.args.device]).per_device_loader(self.args.device)
 
         for inputs in tqdm(dataloader, desc=description):
@@ -362,7 +362,7 @@ class Seq2SeqTrainer(transformers.Trainer):
                 preds = self.distributed_concat(preds, num_total_examples=self.num_examples(dataloader))
             if label_ids is not None:
                 label_ids = self.distributed_concat(label_ids, num_total_examples=self.num_examples(dataloader))
-        elif is_tpu_available():
+        elif is_torch_tpu_available():
             raise NotImplementedError('Variable-length output is not supported with TPU')
             # tpu-comment: Get all predictions and labels from all worker shards of eval dataset
             if preds is not None:

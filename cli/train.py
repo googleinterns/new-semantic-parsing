@@ -246,7 +246,7 @@ if __name__ == '__main__':
         train_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        data_collator=collator,
+        data_collator=collator.collate_batch,
         compute_metrics=meter.compute_metrics,
         optimizers=optimizer_scheduler,
     )

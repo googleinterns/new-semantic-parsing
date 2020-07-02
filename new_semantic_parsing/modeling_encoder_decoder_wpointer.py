@@ -144,7 +144,7 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
 
         # first step
         if type(past) is tuple:
-            encoder_outputs = past
+            encoder_outputs, _ = past
         else:
             encoder_outputs = (past,)
 
@@ -314,6 +314,8 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
 
         encoder_hidden_states = encoder_outputs[0]
 
+        assert encoder_hidden_states.shape[-1] == self.encoder.config.hidden_size
+
         if self.enc_dec_proj is not None:
             encoder_hidden_states = self.enc_dec_proj(encoder_hidden_states)
 
@@ -333,7 +335,7 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         # compute pointer scores via attending from decoder hiddens to encoder hiddens
 
         query = self.decoder_q_proj(decoder_hidden_states)  # (bs, tgt_len, decoder_hidden)
-        keys = encoder_hidden_states  # (bs, src_len, encoder_hidden)
+        keys = encoder_hidden_states  # (bs, src_len, decoder_hidden)
 
         # NOTE: this implementaion is computationally inefficient during inference
         attention_scores = query @ keys.transpose(1, 2)  # (bs, tgt_len, src_len)
