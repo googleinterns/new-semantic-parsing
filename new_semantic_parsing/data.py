@@ -105,7 +105,7 @@ class PointerDataset(torch.utils.data.Dataset):
         return source_max_len, target_max_len
 
 
-class Seq2SeqDataCollator(transformers.DataCollator):
+class Seq2SeqDataCollator:
     """Pads tensors to the maximum length in batch.
     Length is different for encoder and decoder inputs.
     Also makes padding masks.
