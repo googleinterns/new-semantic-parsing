@@ -25,9 +25,16 @@ class EncoderDecoderWPointerConfig(EncoderDecoderConfig):
         super().__init__(**kwargs)
 
         self.max_src_len = max_src_len
-        self.decoder_head_type = getattr(model_args, 'decoder_head_type', 'ffn')
-        self.use_pointer_bias = getattr(model_args, 'use_pointer_bias', False)
-        self.label_smoothing = getattr(model_args, 'label_smoothing', 0)
+
+        self.decoder_head_type = kwargs.get('decoder_head_type', 'ffn')
+        self.use_pointer_bias = kwargs.get('use_pointer_bias', False)
+        self.label_smoothing = kwargs.get('label_smoothing', 0)
+
+        if model_args is not None:
+            self.decoder_head_type = getattr(model_args, 'decoder_head_type', 'ffn')
+            self.use_pointer_bias = getattr(model_args, 'use_pointer_bias', False)
+            self.label_smoothing = getattr(model_args, 'label_smoothing', 0)
+
         self.model_type = self.model_type
 
     @classmethod
