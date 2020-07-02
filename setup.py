@@ -15,7 +15,7 @@
 from setuptools import setup
 
 setup(
-    name='new_semantic_parsing',
-    version='0.1-nightly-Jun29',
-    url='https://github.com/googleinterns/new-semantic-parsing',
+    name="new_semantic_parsing",
+    version="0.1-nightly-Jun29",
+    url="https://github.com/googleinterns/new-semantic-parsing",
 )

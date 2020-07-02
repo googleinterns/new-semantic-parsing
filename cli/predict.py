@@ -34,8 +34,8 @@ from cli.preprocess import make_dataset
 
 
 logging.basicConfig(
-    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO,
     stream=sys.stdout,
 )
@@ -45,6 +45,7 @@ logger = logging.getLogger(__file__)
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
 
+    # fmt: off
     parser.add_argument('--data', required=True, help='path to data file')
     parser.add_argument('--model', required=True, help='path to a model checkpoint')
     parser.add_argument('--output-file', required=True,
@@ -63,27 +64,32 @@ def parse_args(args=None):
     parser.add_argument('--device', default=None,
                         help='Use CUDA if available by default')
     parser.add_argument('--seed', default=34, type=int)
+    # fmt: on
 
     args = parser.parse_args(args)
-    args.schema_tokenizer = args.schema_tokenizer or path_join(args.model, 'tokenizer')
+    args.schema_tokenizer = args.schema_tokenizer or path_join(args.model, "tokenizer")
 
     if os.path.exists(args.output_file):
-        raise ValueError(f'output file {args.output_file} already exists')
+        raise ValueError(f"output file {args.output_file} already exists")
 
     if args.device is None:
-        args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     return args
 
 
 def make_test_dataset(filepath, schema_tokenizer, max_len=None):
-    data = pd.read_table(filepath, names=['text', 'tokens', 'schema'])
+    data = pd.read_table(filepath, names=["text", "tokens", "schema"])
 
-    text_ids: List[list] = [schema_tokenizer.encode_source(text) for text in tqdm(data.tokens, desc='tokenization')]
+    text_ids: List[list] = [
+        schema_tokenizer.encode_source(text) for text in tqdm(data.tokens, desc="tokenization")
+    ]
     if max_len is not None:
         text_ids = [t[:max_len] for t in text_ids]
 
-    text_pointer_masks: List[list] = [utils.get_src_pointer_mask(t, text_tokenizer) for t in text_ids]
+    text_pointer_masks: List[list] = [
+        utils.get_src_pointer_mask(t, text_tokenizer) for t in text_ids
+    ]
 
     dataset = PointerDataset(source_tensors=text_ids, source_pointer_masks=text_pointer_masks)
     dataset.torchify()
@@ -91,15 +97,17 @@ def make_test_dataset(filepath, schema_tokenizer, max_len=None):
     return dataset
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = parse_args()
 
-    logger.info('Loading tokenizers')
+    logger.info("Loading tokenizers")
     schema_tokenizer = TopSchemaTokenizer.load(args.schema_tokenizer)
     text_tokenizer: transformers.PreTrainedTokenizer = schema_tokenizer.src_tokenizer
 
-    logger.info('Loading data')
-    dataset: PointerDataset = make_test_dataset(args.data, text_tokenizer, max_len=args.src_max_len)
+    logger.info("Loading data")
+    dataset: PointerDataset = make_test_dataset(
+        args.data, text_tokenizer, max_len=args.src_max_len
+    )
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -107,7 +115,7 @@ if __name__ == '__main__':
         num_workers=8,
     )
 
-    logger.info(f'Maximum source text length {dataset.get_max_len()[0]}')
+    logger.info(f"Maximum source text length {dataset.get_max_len()[0]}")
 
     model = EncoderDecoderWPointerModel.from_pretrained(args.model).to(args.device)
     model.eval()
@@ -124,30 +132,34 @@ if __name__ == '__main__':
     # predictions should be postprocessed for evaluation (reproduce TOP format tokenization)
     predictions_str = [schema_tokenizer.postprocess(p) for p in predictions_str]
 
-    with open(args.output_file, 'w') as f:
+    with open(args.output_file, "w") as f:
         for pred in predictions_str:
-            f.write(pred + '\n')
+            f.write(pred + "\n")
 
-    with open(args.output_file + '.ids', 'w') as f:
+    with open(args.output_file + ".ids", "w") as f:
         for pred in predictions_ids:
-            f.write(str(pred) + '\n')
+            f.write(str(pred) + "\n")
 
-    logger.info(f'Prediction finished, results saved to {args.output_file}')
+    logger.info(f"Prediction finished, results saved to {args.output_file}")
     logger.info(f'Ids saved to {args.output_file + ".ids"}')
 
-    logger.info(f'Computing some metrics...')
+    logger.info(f"Computing some metrics...")
 
     try:
-        data_df = pd.read_table(args.data, names=['text', 'tokens', 'schema'])
+        data_df = pd.read_table(args.data, names=["text", "tokens", "schema"])
         dataset_with_labels = make_dataset(args.data, schema_tokenizer)
         targets_str = list(data_df.schema)
 
-        exact_match_str = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
-        logger.info(f'Exact match: {exact_match_str}')
+        exact_match_str = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(
+            targets_str
+        )
+        logger.info(f"Exact match: {exact_match_str}")
 
         targets_ids = [list(ex.labels.numpy()[:-1]) for ex in dataset_with_labels]
-        exact_match_ids = sum(int(str(p) == str(l)) for p, l in zip(predictions_ids, targets_ids)) / len(targets_str)
-        logger.info(f'Exact match (ids): {exact_match_ids}')
+        exact_match_ids = sum(
+            int(str(p) == str(l)) for p, l in zip(predictions_ids, targets_ids)
+        ) / len(targets_str)
+        logger.info(f"Exact match (ids): {exact_match_ids}")
 
     except FileNotFoundError as e:
         logger.warning(e)

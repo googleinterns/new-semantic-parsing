@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+import random
 import torch
 import numpy as np
 import transformers
@@ -22,14 +23,20 @@ from tqdm.auto import tqdm
 from new_semantic_parsing.dataclasses import Seq2SeqEvalPrediciton
 
 
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+
 def get_vocab_top_schema(text):
-    schema_tokens = {'[', ']', 'IN:', 'SL:'}
+    schema_tokens = {"[", "]", "IN:", "SL:"}
 
-    text = text.replace('[', '')
-    text = text.replace(']', '')
+    text = text.replace("[", "")
+    text = text.replace("]", "")
 
-    for token in text.split(' '):
-        if token[:3] in ['IN:', 'SL:']:
+    for token in text.split(" "):
+        if token[:3] in ["IN:", "SL:"]:
             schema_tokens.add(token[3:])
     return schema_tokens
 
@@ -69,9 +76,11 @@ class MetricsMeter:
                 `exact_match` - fraction of correctly predicted sequences (sequences are truncated after EOS)
         """
         if len(eval_prediction.predictions[0].shape) != 2:
-            raise ValueError('eval_prediction.predictions should be a list of predictions, '
-                             'expected prediction shape to be (seq_len, vocab_dim), got '
-                             f'{eval_prediction.predictions[0].shape} instead')
+            raise ValueError(
+                "eval_prediction.predictions should be a list of predictions, "
+                "expected prediction shape to be (seq_len, vocab_dim), got "
+                f"{eval_prediction.predictions[0].shape} instead"
+            )
 
         predictions = [np.argmax(p, axis=-1) for p in eval_prediction.predictions]
         labels = eval_prediction.label_ids
@@ -95,18 +104,9 @@ class MetricsMeter:
         exact_match /= len(truncated_predictions)
 
         return {
-            'accuracy': accuracy,
-            'exact_match': exact_match,
+            "accuracy": accuracy,
+            "exact_match": exact_match,
         }
-
-
-def set_seed(seed):
-    import torch
-    torch.manual_seed(seed)
-    import numpy
-    numpy.random.seed(seed)
-    import random
-    random.seed(seed)
 
 
 def get_lr(model: transformers.PreTrainedModel):
@@ -116,15 +116,16 @@ def get_lr(model: transformers.PreTrainedModel):
     lr ~= 0.003239 - 0.0001395 log(n_non_embedding_params)
     """
 
-    if hasattr(model, 'embeddings'):
+    if hasattr(model, "embeddings"):
         n_embedding_params = get_n_embed_params_trainable(model.embeddings)
-    elif hasattr(model, 'encoder') and hasattr(model, 'decoder'):
+    elif hasattr(model, "encoder") and hasattr(model, "decoder"):
         n_embed_encoder = get_n_embed_params_trainable(model.encoder.embeddings)
         n_embed_decoder = get_n_embed_params_trainable(model.decoder.embeddings)
         n_embedding_params = n_embed_encoder + n_embed_decoder
     else:
-        raise ValueError('Model object should have .embeddings or'
-                         '.encoder.embeddings and .decoder.embeddings')
+        raise ValueError(
+            "Model object should have .embeddings or.encoder.embeddings and .decoder.embeddings"
+        )
 
     n_non_embedding_params = model.num_parameters(only_trainable=True) - n_embedding_params
     return 0.003239 - 0.0001395 * np.log(n_non_embedding_params)
@@ -154,28 +155,28 @@ def get_n_embed_params_trainable(embeddings):
 
 def get_model_type(model_name):
     """Search for a largest substring from transformers.CONFIG_MAPPING"""
-    candidate = ''
+    candidate = ""
 
     for name in transformers.CONFIG_MAPPING:
         if name in model_name and len(name) > len(candidate):
             candidate = name
 
     if len(candidate) == 0:
-        raise ValueError(f'{model_name} is not found in transformers.CONFIG_MAPPING')
+        raise ValueError(f"{model_name} is not found in transformers.CONFIG_MAPPING")
 
     return candidate
 
 
-def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams, device='cpu'):
+def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams, device="cpu"):
     predictions_ids = []
     predictions_str = []
     text_tokenizer = schema_tokenizer.src_tokenizer
 
-    for batch in tqdm(dataloader, desc='generation'):
+    for batch in tqdm(dataloader, desc="generation"):
         prediction_batch: torch.LongTensor = model.generate(
-            input_ids=batch['input_ids'].to(device),
-            pointer_mask=batch['pointer_mask'].to(device),
-            attention_mask=batch['attention_mask'].to(device),
+            input_ids=batch["input_ids"].to(device),
+            pointer_mask=batch["pointer_mask"].to(device),
+            attention_mask=batch["attention_mask"].to(device),
             max_length=max_len,
             num_beams=num_beams,
             pad_token_id=text_tokenizer.pad_token_id,
@@ -184,13 +185,13 @@ def iterative_prediction(model, dataloader, schema_tokenizer, max_len, num_beams
         )
 
         for i, prediction in enumerate(prediction_batch):
-            prediction = [p for p in prediction.cpu().numpy() if p not in schema_tokenizer.special_ids]
+            prediction = [
+                p for p in prediction.cpu().numpy() if p not in schema_tokenizer.special_ids
+            ]
             predictions_ids.append(prediction)
 
             prediction_str: str = schema_tokenizer.decode(
-                prediction,
-                batch['input_ids'][i],
-                skip_special_tokens=True,
+                prediction, batch["input_ids"][i], skip_special_tokens=True,
             )
             predictions_str.append(prediction_str)
 

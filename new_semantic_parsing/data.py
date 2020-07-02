@@ -19,7 +19,13 @@ from new_semantic_parsing.dataclasses import InputDataClass, List, Tensor, PairI
 
 
 class PointerDataset(torch.utils.data.Dataset):
-    def __init__(self, source_tensors, target_tensors=None, source_pointer_masks=None, target_pointer_masks=None):
+    def __init__(
+        self,
+        source_tensors,
+        target_tensors=None,
+        source_pointer_masks=None,
+        target_pointer_masks=None,
+    ):
         """
         Stores tensors and makes labels as shifted target_tensors
 
@@ -37,11 +43,14 @@ class PointerDataset(torch.utils.data.Dataset):
         self.target_pointer_masks = target_pointer_masks
 
         if source_tensors is None:
-            raise ValueError('source_tensors cannot be None')
+            raise ValueError("source_tensors cannot be None")
 
-        self.torchified = all(map(self._check_torchified, [
-            source_tensors, source_pointer_masks, target_tensors, target_pointer_masks,
-        ]))
+        self.torchified = all(
+            map(
+                self._check_torchified,
+                [source_tensors, source_pointer_masks, target_tensors, target_pointer_masks,],
+            )
+        )
 
     @classmethod
     def from_pair_items(cls, items: List[PairItem]):
@@ -68,8 +77,7 @@ class PointerDataset(torch.utils.data.Dataset):
 
         if self.target_tensors is None:
             return InputDataClass(
-                input_ids=self.source_tensors[item],
-                pointer_mask=source_pointer_mask,
+                input_ids=self.source_tensors[item], pointer_mask=source_pointer_mask,
             )
 
         target_pointer_mask = None
@@ -133,6 +141,7 @@ class Seq2SeqDataCollator:
 
     All values corresponsing to the keys ending with `mask` are padded with zeroes
     """
+
     def __init__(self, pad_id, decoder_pad_id=None):
         self.encoder_pad_id = pad_id
         self.decoder_pad_id = decoder_pad_id or pad_id
@@ -160,35 +169,36 @@ class Seq2SeqDataCollator:
             batched_shape = (batch_size, maxlen, *v.shape[1:])
             batch[k] = torch.zeros(batched_shape, dtype=v.dtype, device=v.device)
 
-            if k.endswith('mask'):
+            if k.endswith("mask"):
                 continue
 
             batch[k].fill_(self.decoder_pad_id if is_decoder else self.encoder_pad_id)
 
         for i, example in enumerate(examples):
             for k, tensor in vars(example).items():
-                if tensor is None: continue
-                batch[k][i, :len(tensor)] = tensor
+                if tensor is None:
+                    continue
+                batch[k][i, : len(tensor)] = tensor
 
             if example.attention_mask is None:
-                batch['attention_mask'] = batch['input_ids'] != self.encoder_pad_id
+                batch["attention_mask"] = batch["input_ids"] != self.encoder_pad_id
 
             has_decoder_inputs = example.decoder_input_ids is not None
             has_decoder_mask = example.decoder_attention_mask is not None
             if has_decoder_inputs and not has_decoder_mask:
-                batch['decoder_attention_mask'] = batch['decoder_input_ids'] != self.decoder_pad_id
+                batch["decoder_attention_mask"] = batch["decoder_input_ids"] != self.decoder_pad_id
 
         return batch
 
     @staticmethod
     def _is_decoder_field(field_name):
-        return field_name.startswith('decoder_') or field_name == 'labels'
+        return field_name.startswith("decoder_") or field_name == "labels"
 
     def _shape_check(self, maxlen, is_decoder, key):
         """Data shape validation"""
         if is_decoder:
             if self._decoder_max_len is not None and self._decoder_max_len != maxlen:
-                raise ValueError(f'decoder input tensors have different lengths ({key})')
+                raise ValueError(f"decoder input tensors have different lengths ({key})")
         else:
             if self._encoder_max_len is not None and self._encoder_max_len != maxlen:
-                raise ValueError(f'encoder input tensors have different lengths({key})')
+                raise ValueError(f"encoder input tensors have different lengths({key})")

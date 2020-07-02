@@ -37,7 +37,7 @@ class LabelSmoothedCrossEntropy(nn.Module):
         one_hot = torch.zeros_like(preds).scatter(1, target.view(-1, 1), 1)
         one_hot = (1 - self.eps) * one_hot + self.eps / preds.size(-1) * one_hot
 
-        loss = - (one_hot * log_probs).sum(dim=-1)
+        loss = -(one_hot * log_probs).sum(dim=-1)
         loss *= mask
         loss = loss.sum() / torch.sum(mask)  # divide by the total number of tokens
 

@@ -30,29 +30,39 @@ class Seq2SeqDataCollatorDatasetTest(unittest.TestCase):
         e_pad = 0
         d_pad = 1
         d_mask = 2
-        src_tensors = [torch.tensor([2, 5, 4, 4, 2]),
-                       torch.tensor([1, 8, 2, 8, 5, 4, 2, 2, 5, 7]),
-                       torch.tensor([4, 6, 4, 2, 1, 2])]
-        tgt_tensors = [torch.tensor([6, 7, 8, 7, 2, 2, 4, 8, 5]),
-                       torch.tensor([5, 2, 2, 8, 7, 3, 5, 4, 2, 2, 1]),
-                       torch.tensor([8, 2, 2, 3, 5, 2, 2, 2, 3, 8, 4, 6, 7, 8])]
+        src_tensors = [
+            torch.tensor([2, 5, 4, 4, 2]),
+            torch.tensor([1, 8, 2, 8, 5, 4, 2, 2, 5, 7]),
+            torch.tensor([4, 6, 4, 2, 1, 2]),
+        ]
+        tgt_tensors = [
+            torch.tensor([6, 7, 8, 7, 2, 2, 4, 8, 5]),
+            torch.tensor([5, 2, 2, 8, 7, 3, 5, 4, 2, 2, 1]),
+            torch.tensor([8, 2, 2, 3, 5, 2, 2, 2, 3, 8, 4, 6, 7, 8]),
+        ]
         tgt_masks = [(tgt_tensors[i] == d_mask).type(torch.FloatTensor) for i in range(3)]
 
-        expected_input_ids = torch.tensor([
-            [2, 5, 4, 4, 2, 0, 0, 0, 0, 0],
-            [1, 8, 2, 8, 5, 4, 2, 2, 5, 7],
-            [4, 6, 4, 2, 1, 2, 0, 0, 0, 0],
-        ])
-        expected_decoder_input_ids = torch.tensor([
-            [6, 7, 8, 7, 2, 2, 4, 8, 5, 1, 1, 1, 1, 1],
-            [5, 2, 2, 8, 7, 3, 5, 4, 2, 2, 1, 1, 1, 1],
-            [8, 2, 2, 3, 5, 2, 2, 2, 3, 8, 4, 6, 7, 8],
-        ])
-        expected_decoder_pointer_mask = torch.tensor([
-            [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
-            [0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-        ])
+        expected_input_ids = torch.tensor(
+            [
+                [2, 5, 4, 4, 2, 0, 0, 0, 0, 0],
+                [1, 8, 2, 8, 5, 4, 2, 2, 5, 7],
+                [4, 6, 4, 2, 1, 2, 0, 0, 0, 0],
+            ]
+        )
+        expected_decoder_input_ids = torch.tensor(
+            [
+                [6, 7, 8, 7, 2, 2, 4, 8, 5, 1, 1, 1, 1, 1],
+                [5, 2, 2, 8, 7, 3, 5, 4, 2, 2, 1, 1, 1, 1],
+                [8, 2, 2, 3, 5, 2, 2, 2, 3, 8, 4, 6, 7, 8],
+            ]
+        )
+        expected_decoder_pointer_mask = torch.tensor(
+            [
+                [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
+                [0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+            ]
+        )
 
         assert d_mask in tgt_tensors[0]
 
@@ -70,24 +80,24 @@ class Seq2SeqDataCollatorDatasetTest(unittest.TestCase):
 
         batch = collator.collate_batch(examples)
 
-        self.assertEqual(batch['input_ids'].shape, (bs, 10))
-        self.assertIsInstance(batch['input_ids'], torch.LongTensor)
-        self.assertEqual(batch['input_ids'][0, -1], e_pad)
-        self.assertTrue(torch.all(batch['input_ids'] == expected_input_ids))
+        self.assertEqual(batch["input_ids"].shape, (bs, 10))
+        self.assertIsInstance(batch["input_ids"], torch.LongTensor)
+        self.assertEqual(batch["input_ids"][0, -1], e_pad)
+        self.assertTrue(torch.all(batch["input_ids"] == expected_input_ids))
 
-        self.assertEqual(batch['decoder_input_ids'].shape, (bs, 14))
-        self.assertIsInstance(batch['decoder_input_ids'], torch.LongTensor)
-        self.assertEqual(batch['decoder_input_ids'][0, -1], d_pad)
-        self.assertTrue(torch.all(batch['decoder_input_ids'] == expected_decoder_input_ids))
+        self.assertEqual(batch["decoder_input_ids"].shape, (bs, 14))
+        self.assertIsInstance(batch["decoder_input_ids"], torch.LongTensor)
+        self.assertEqual(batch["decoder_input_ids"][0, -1], d_pad)
+        self.assertTrue(torch.all(batch["decoder_input_ids"] == expected_decoder_input_ids))
 
-        self.assertEqual(batch['labels'].shape, (bs, 14))
-        self.assertIsInstance(batch['labels'], torch.LongTensor)
+        self.assertEqual(batch["labels"].shape, (bs, 14))
+        self.assertIsInstance(batch["labels"], torch.LongTensor)
 
-        self.assertEqual(batch['decoder_pointer_mask'].shape, (bs, 14))
-        self.assertIsInstance(batch['decoder_pointer_mask'], torch.FloatTensor)
-        _mask = batch['decoder_pointer_mask']
+        self.assertEqual(batch["decoder_pointer_mask"].shape, (bs, 14))
+        self.assertIsInstance(batch["decoder_pointer_mask"], torch.FloatTensor)
+        _mask = batch["decoder_pointer_mask"]
         self.assertTrue(((_mask == 0) | (_mask == 1)).all())
-        self.assertTrue(torch.all(batch['decoder_pointer_mask'] == expected_decoder_pointer_mask))
+        self.assertTrue(torch.all(batch["decoder_pointer_mask"] == expected_decoder_pointer_mask))
 
 
 class PointerDatasetTest(unittest.TestCase):
@@ -95,12 +105,16 @@ class PointerDatasetTest(unittest.TestCase):
         utils.set_seed(29)
 
         d_mask = 2
-        src_tensors = [torch.tensor([2, 5, 4, 4, 2]),
-                       torch.tensor([1, 8, 2, 8, 5, 4, 2, 2, 5, 7]),
-                       torch.tensor([4, 6, 4, 2, 1, 2])]
-        tgt_tensors = [torch.tensor([6, 7, 8, 7, 2, 2, 4, 8, 5]),
-                       torch.tensor([5, 2, 2, 8, 7, 3, 5, 4, 2, 2, 1]),
-                       torch.tensor([8, 2, 2, 3, 5, 2, 2, 2, 3, 8, 4, 6, 7, 8])]
+        src_tensors = [
+            torch.tensor([2, 5, 4, 4, 2]),
+            torch.tensor([1, 8, 2, 8, 5, 4, 2, 2, 5, 7]),
+            torch.tensor([4, 6, 4, 2, 1, 2]),
+        ]
+        tgt_tensors = [
+            torch.tensor([6, 7, 8, 7, 2, 2, 4, 8, 5]),
+            torch.tensor([5, 2, 2, 8, 7, 3, 5, 4, 2, 2, 1]),
+            torch.tensor([8, 2, 2, 3, 5, 2, 2, 2, 3, 8, 4, 6, 7, 8]),
+        ]
         tgt_masks = [(tgt_tensors[i] == d_mask).type(torch.FloatTensor) for i in range(3)]
 
         expected_decoder_input_ids = [
@@ -114,7 +128,9 @@ class PointerDatasetTest(unittest.TestCase):
             torch.tensor([0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0]),
         ]
 
-        dataset = new_semantic_parsing.data.PointerDataset(src_tensors, tgt_tensors, target_pointer_masks=tgt_masks)
+        dataset = new_semantic_parsing.data.PointerDataset(
+            src_tensors, tgt_tensors, target_pointer_masks=tgt_masks
+        )
 
         item: InputDataClass = dataset[0]
 
@@ -130,8 +146,10 @@ class PointerDatasetTest(unittest.TestCase):
     def test_getitem_inference(self):
         utils.set_seed(29)
 
-        src_tensors = [torch.randint(0, 10, size=(random.randint(5, 13),), dtype=torch.int64)
-                       for _ in range(10)]
+        src_tensors = [
+            torch.randint(0, 10, size=(random.randint(5, 13),), dtype=torch.int64)
+            for _ in range(10)
+        ]
 
         dataset = new_semantic_parsing.data.PointerDataset(src_tensors)
 

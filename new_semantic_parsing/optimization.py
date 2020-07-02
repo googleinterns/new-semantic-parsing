@@ -32,11 +32,12 @@ def get_optimizers(model, num_frozen_encoder_steps, training_args):
     if isinstance(lr, float):
         encoder_lr = decoder_lr = lr
     elif isinstance(lr, dict):
-        encoder_lr = lr.get('encoder_lr', 0)
-        decoder_lr = lr.get('decoder_lr', 0)
+        encoder_lr = lr.get("encoder_lr", 0)
+        decoder_lr = lr.get("decoder_lr", 0)
     else:
-        raise ValueError('learning_rate should be eigher float or dict')
+        raise ValueError("learning_rate should be eigher float or dict")
 
+    # fmt: off
     optimizer_grouped_parameters = [
         {
             "params": [p for n, p in model.decoder.named_parameters() if not any(nd in n for nd in no_decay)],
@@ -71,8 +72,11 @@ def get_optimizers(model, num_frozen_encoder_steps, training_args):
                 "group_type": "encoder_params",
             },
         ])
+    # fmt: on
 
-    optimizer = torch.optim.Adam(optimizer_grouped_parameters, eps=training_args.adam_epsilon, betas=(0.9, 0.98))
+    optimizer = torch.optim.Adam(
+        optimizer_grouped_parameters, eps=training_args.adam_epsilon, betas=(0.9, 0.98)
+    )
 
     scheduler = get_noam_schedule_with_gradual_unfreezing(
         optimizer,
@@ -85,12 +89,8 @@ def get_optimizers(model, num_frozen_encoder_steps, training_args):
 
 
 def get_linear_schedule_with_warmup_and_gradual_unfreezing(
-        optimizer,
-        num_warmup_steps,
-        num_training_steps,
-        num_frozen_encoder_steps,
-        last_epoch=-1,
-    ):
+    optimizer, num_warmup_steps, num_training_steps, num_frozen_encoder_steps, last_epoch=-1,
+):
     """
     :param optimizer: torch Optimizer where some param groups have 'group_type' key
         if group_type starts with 'encoder_' it will be frozen for `num_frozen_encoder_steps`
@@ -111,19 +111,17 @@ def get_linear_schedule_with_warmup_and_gradual_unfreezing(
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1, num_warmup_steps))
         return max(
-            0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+            0.0,
+            float(num_training_steps - current_step)
+            / float(max(1, num_training_steps - num_warmup_steps)),
         )
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
 
 def get_noam_schedule_with_gradual_unfreezing(
-        optimizer,
-        num_warmup_steps,
-        model_size,
-        num_frozen_encoder_steps,
-        last_epoch=1
-    ):
+    optimizer, num_warmup_steps, model_size, num_frozen_encoder_steps, last_epoch=1
+):
     """
     :param optimizer: torch Optimizer where some param groups have 'group_type' key
         if group_type starts with 'encoder_' it will be frozen for `num_frozen_encoder_steps`
@@ -140,7 +138,9 @@ def get_noam_schedule_with_gradual_unfreezing(
         if current_step >= num_frozen_encoder_steps:
             set_encoder_requires_grad(optimizer.param_groups, True)
 
-        scale = model_size ** -0.5 * min(current_step ** (-0.5), current_step * num_warmup_steps ** (-1.5))
+        scale = model_size ** -0.5 * min(
+            current_step ** (-0.5), current_step * num_warmup_steps ** (-1.5)
+        )
         return scale
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
@@ -148,8 +148,8 @@ def get_noam_schedule_with_gradual_unfreezing(
 
 def set_encoder_requires_grad(param_groups, value: bool):
     for param_group in param_groups:
-        group_type = param_group.get('group_type', '')
-        if not group_type.startswith('encoder'):
+        group_type = param_group.get("group_type", "")
+        if not group_type.startswith("encoder"):
             continue
 
         for param in param_group["params"]:

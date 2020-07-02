@@ -35,8 +35,8 @@ from new_semantic_parsing.data import Seq2SeqDataCollator, PointerDataset
 from new_semantic_parsing import utils, SAVE_FORMAT_VERSION, optimization
 
 logging.basicConfig(
-    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO,
     stream=sys.stdout,
 )
@@ -45,6 +45,9 @@ logger = logging.getLogger(__file__)
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
+
+    # fmt: off
+
     # files
     parser.add_argument('--data-dir', required=True,
                         help='Path to preprocess.py --save-dir containing tokenizer, '
@@ -103,54 +106,58 @@ def parse_args(args=None):
     parser.add_argument('--wandb-project', default=None)
     parser.add_argument('--log-every', default=100, type=int)
 
+    # fmt: on
+
     args = parser.parse_args(args)
 
     # set defaults for None fields
     if (args.encoder_lr is not None) ^ (args.decoder_lr is not None):
-        raise ValueError('--encoder-lr and --decoder-lr should be both specified')
+        raise ValueError("--encoder-lr and --decoder-lr should be both specified")
 
     args.decoder_layers = args.decoder_layers or args.layers
     args.decoder_hidden = args.decoder_hidden or args.hidden
     args.decoder_heads = args.decoder_heads or args.heads
 
     if args.output_dir is None:
-        args.output_dir = os.path.join('output_dir', next(tempfile._get_candidate_names()))
+        args.output_dir = os.path.join("output_dir", next(tempfile._get_candidate_names()))
 
     return args
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = parse_args()
 
     if os.path.exists(args.output_dir):
-        raise ValueError(f'output_dir {args.output_dir} already exists')
+        raise ValueError(f"output_dir {args.output_dir} already exists")
 
-    logger.info('Loading tokenizers')
-    schema_tokenizer = TopSchemaTokenizer.load(path_join(args.data_dir, 'tokenizer'))
+    logger.info("Loading tokenizers")
+    schema_tokenizer = TopSchemaTokenizer.load(path_join(args.data_dir, "tokenizer"))
     text_tokenizer: transformers.PreTrainedTokenizer = schema_tokenizer.src_tokenizer
 
-    logger.info('Loading data')
-    datasets = torch.load(path_join(args.data_dir, 'data.pkl'))
-    train_dataset: PointerDataset = datasets['train_dataset']
-    eval_dataset: PointerDataset = datasets['valid_dataset']
+    logger.info("Loading data")
+    datasets = torch.load(path_join(args.data_dir, "data.pkl"))
+    train_dataset: PointerDataset = datasets["train_dataset"]
+    eval_dataset: PointerDataset = datasets["valid_dataset"]
 
     max_src_len, _ = train_dataset.get_max_len()
 
     try:
-        with open(path_join(args.data_dir, 'args.toml')) as f:
+        with open(path_join(args.data_dir, "args.toml")) as f:
             preprocess_args = toml.load(f)
-            if preprocess_args['version'] != SAVE_FORMAT_VERSION:
-                logger.warning('Binary data version differs from the current version. '
-                               'May cause failing and unexpected behavior')
+            if preprocess_args["version"] != SAVE_FORMAT_VERSION:
+                logger.warning(
+                    "Binary data version differs from the current version. "
+                    "May cause failing and unexpected behavior"
+                )
     except FileNotFoundError:
         preprocess_args = None
 
-    logger.info('Creating a model')
+    logger.info("Creating a model")
     if args.encoder_model:
-        if preprocess_args is not None and preprocess_args['text_tokenizer'] != args.encoder_model:
-            logger.warning('Data may have been preprocessed with a different tokenizer')
+        if preprocess_args is not None and preprocess_args["text_tokenizer"] != args.encoder_model:
+            logger.warning("Data may have been preprocessed with a different tokenizer")
             logger.warning(f'Preprocessing tokenizer     : {preprocess_args["text_tokenizer"]}')
-            logger.warning(f'Pretrained encoder tokenizer: {args.encoder_model}')
+            logger.warning(f"Pretrained encoder tokenizer: {args.encoder_model}")
 
         encoder_config = transformers.AutoConfig.from_pretrained(args.encoder_model)
         encoder_config.hidden_dropout_prob = args.dropout
@@ -159,7 +166,7 @@ if __name__ == '__main__':
         encoder = transformers.AutoModel.from_pretrained(args.encoder_model, config=encoder_config)
 
         if encoder.config.vocab_size != text_tokenizer.vocab_size:
-            raise ValueError('Preprocessing tokenizer and model tokenizer are not compatible')
+            raise ValueError("Preprocessing tokenizer and model tokenizer are not compatible")
 
         ffn_hidden = 4 * args.decoder_hidden if args.decoder_hidden is not None else None
 
@@ -177,10 +184,7 @@ if __name__ == '__main__':
         decoder = transformers.BertModel(decoder_config)
 
         model = EncoderDecoderWPointerModel(
-            encoder=encoder,
-            decoder=decoder,
-            max_src_len=max_src_len,
-            model_args=args,
+            encoder=encoder, decoder=decoder, max_src_len=max_src_len, model_args=args,
         )
 
     else:  # if args.encoder_model is not specified
@@ -201,11 +205,11 @@ if __name__ == '__main__':
             model_args=args,
         )
 
-    logger.info('Starting training')
+    logger.info("Starting training")
     lr = args.lr or utils.get_lr(model)
 
     if args.encoder_lr is not None and args.decoder_lr is not None:
-        lr = {'encoder_lr': args.encoder_lr, 'decoder_lr': args.decoder_lr}
+        lr = {"encoder_lr": args.encoder_lr, "decoder_lr": args.decoder_lr}
 
     train_args = transformers.TrainingArguments(
         output_dir=args.output_dir,
@@ -232,9 +236,13 @@ if __name__ == '__main__':
 
     # number of batches not considering gradient accumulation
     epoch_len = len(train_dataset) // args.batch_size + int(len(train_dataset) % args.batch_size)
-    optimizer_scheduler = optimization.get_optimizers(model, args.num_frozen_encoder_steps, train_args)
+    optimizer_scheduler = optimization.get_optimizers(
+        model, args.num_frozen_encoder_steps, train_args
+    )
 
-    meter = utils.MetricsMeter(stop_token_ids=[schema_tokenizer.eos_token_id, schema_tokenizer.pad_token_id])
+    meter = utils.MetricsMeter(
+        stop_token_ids=[schema_tokenizer.eos_token_id, schema_tokenizer.pad_token_id]
+    )
 
     os.environ["WANDB_PROJECT"] = args.wandb_project or "new_semantic_parsing"
 
@@ -253,32 +261,32 @@ if __name__ == '__main__':
 
     wandb.config.update(args)
     if preprocess_args is not None:
-        wandb.config.update({'preprocess_' + k: v for k, v in preprocess_args.items()})
+        wandb.config.update({"preprocess_" + k: v for k, v in preprocess_args.items()})
 
     train_results = trainer.train()
     logger.info(train_results)
 
     trainer.save_model(args.output_dir)
 
-    with open(path_join(args.data_dir, 'tokenizer', 'config.json')) as f:
-        model_type = json.load(f)['model_type']
+    with open(path_join(args.data_dir, "tokenizer", "config.json")) as f:
+        model_type = json.load(f)["model_type"]
 
-    schema_tokenizer.save(path_join(args.output_dir, 'tokenizer'), encoder_model_type=model_type)
+    schema_tokenizer.save(path_join(args.output_dir, "tokenizer"), encoder_model_type=model_type)
     logger.info(f'Tokenizer saved in {path_join(args.output_dir, "tokenizer")}')
 
-    with open(path_join(args.output_dir, 'args.toml'), 'w') as f:
-        args_dict = {'version': SAVE_FORMAT_VERSION, **vars(args)}
+    with open(path_join(args.output_dir, "args.toml"), "w") as f:
+        args_dict = {"version": SAVE_FORMAT_VERSION, **vars(args)}
         toml.dump(args_dict, f)
 
     model.eval()
 
     eval_results = trainer.evaluate()
-    logger.info('Final eval results')
+    logger.info("Final eval results")
     logger.info(eval_results)
 
-    logger.info('Training finished!')
+    logger.info("Training finished!")
 
-    logger.info('Generating predictions')
+    logger.info("Generating predictions")
     dataloader = torch.utils.data.DataLoader(
         eval_dataset,
         batch_size=args.batch_size,
@@ -295,36 +303,43 @@ if __name__ == '__main__':
         device=trainer.args.device,
     )
 
-    logger.info('Computing inference-time metrics')
+    logger.info("Computing inference-time metrics")
 
-    data_df = pd.read_table('data/top-dataset-semantic-parsing-toy/eval.tsv', names=['text', 'tokens', 'schema'])
+    data_df = pd.read_table(
+        "data/top-dataset-semantic-parsing-toy/eval.tsv", names=["text", "tokens", "schema"],
+    )
     targets_str = list(data_df.schema)
 
     predictions_str = [schema_tokenizer.postprocess(p) for p in predictions_str]
     exact_match = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)
-    logger.info(f'Exact match (str): {exact_match}')
+    logger.info(f"Exact match (str): {exact_match}")
 
     targets_ids = [list(ex.labels.numpy()[:-1]) for ex in eval_dataset]
-    exact_match_ids = sum(int(str(p) == str(l)) for p, l in zip(predictions_ids, targets_ids)) / len(targets_str)
-    logger.info(f'Exact match (ids): {exact_match_ids}')
+    exact_match_ids = sum(
+        int(str(p) == str(l)) for p, l in zip(predictions_ids, targets_ids)
+    ) / len(targets_str)
+    logger.info(f"Exact match (ids): {exact_match_ids}")
 
-    logger.info('Checking for mismatches between ids and str')
+    logger.info("Checking for mismatches between ids and str")
 
     n_errors = 0
 
     for i in range(len(targets_str)):
-        if str(predictions_ids[i]) == str(eval_dataset[i].labels.numpy()[:-1]) and predictions_str[i] != targets_str[i]:
+        if (
+            str(predictions_ids[i]) == str(eval_dataset[i].labels.numpy()[:-1])
+            and predictions_str[i] != targets_str[i]
+        ):
             n_errors += 1
-            logger.info('Mismatch ', n_errors)
+            logger.info("Mismatch ", n_errors)
 
-            logger.info('Target str: ', targets_str[i])
-            logger.info('Decoded   : ', predictions_str[i])
+            logger.info("Target str: ", targets_str[i])
+            logger.info("Decoded   : ", predictions_str[i])
 
-            logger.info('Target ids : ', eval_dataset[i].labels)
-            logger.info('Predictions: ', predictions_ids[i])
-            logger.info('')
+            logger.info("Target ids : ", eval_dataset[i].labels)
+            logger.info("Predictions: ", predictions_ids[i])
+            logger.info("")
 
     if n_errors > 0:
-        logger.info(f'Mismatches       : {n_errors}')
-        logger.info(f'Exact match (str): {exact_match}')
-        logger.info(f'Exact match (ids): {exact_match_ids}')
+        logger.info(f"Mismatches       : {n_errors}")
+        logger.info(f"Exact match (str): {exact_match}")
+        logger.info(f"Exact match (ids): {exact_match_ids}")

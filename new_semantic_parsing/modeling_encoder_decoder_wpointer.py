@@ -21,7 +21,9 @@ import torch.nn.functional as F
 
 import transformers
 
-from new_semantic_parsing.configuration_encoder_decoder_wpointer import EncoderDecoderWPointerConfig
+from new_semantic_parsing.configuration_encoder_decoder_wpointer import (
+    EncoderDecoderWPointerConfig,
+)
 from new_semantic_parsing.loss import LabelSmoothedCrossEntropy
 
 
@@ -29,10 +31,13 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
     """
     Encoder-decoder with pointer model as in arxiv.org/abs/2001.11458
     """
+
     config_class = EncoderDecoderWPointerConfig
     base_model_prefix = "encoder_decoder_wpointer"
 
-    def __init__(self, config=None, encoder=None, decoder=None, max_src_len=None, model_args=None, **kwargs):
+    def __init__(
+        self, config=None, encoder=None, decoder=None, max_src_len=None, model_args=None, **kwargs,
+    ):
         """
         :param config:
         :param encoder: transformers.PreTrainedModel
@@ -67,26 +72,28 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         self.decoder = decoder
 
         if self.encoder.get_output_embeddings() is not None:
-            raise RuntimeError('The encoder {} should not have an LM Head. '
-                               'Please use a model without LM Head')
+            raise RuntimeError(
+                "The encoder {} should not have an LM Head. Please use a model without LM Head"
+            )
 
         self.max_src_len = self.config.max_src_len
 
         self.enc_dec_proj = None
         if self.encoder.config.hidden_size != self.decoder.config.hidden_size:
-            self.enc_dec_proj = nn.Linear(self.encoder.config.hidden_size,
-                                          self.decoder.config.hidden_size)
+            self.enc_dec_proj = nn.Linear(
+                self.encoder.config.hidden_size, self.decoder.config.hidden_size
+            )
 
         # this gives a schema vocab size (without pointer embeddings)
         self.output_vocab_size = self.decoder.config.vocab_size - self.config.max_src_len
-        if self.config.decoder_head_type == 'ffn':
+        if self.config.decoder_head_type == "ffn":
             head_config = deepcopy(self.decoder.config)
             head_config.vocab_size = self.output_vocab_size
 
             # Linear -> activation -> LayerNorm -> Linear
             # from config only .hidden_size, .hidden_act, .layer_norm_eps and .vocab_size are used
             self.lm_head = transformers.modeling_bert.BertLMPredictionHead(head_config)
-        elif self.config.decoder_head_type == 'linear':
+        elif self.config.decoder_head_type == "linear":
             self.lm_head = nn.Linear(decoder.config.hidden_size, self.output_vocab_size)
         else:
             raise ValueError(model_args.decoder_head_type)
@@ -96,16 +103,20 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         # self._tie_or_clone_weights(self.lm_head.decoder,
         #                            self.decoder.get_input_embeddings())
 
-        self.decoder_q_proj = nn.Linear(self.decoder.config.hidden_size,
-                                        self.decoder.config.hidden_size,
-                                        bias=self.config.use_pointer_bias)
+        self.decoder_q_proj = nn.Linear(
+            self.decoder.config.hidden_size,
+            self.decoder.config.hidden_size,
+            bias=self.config.use_pointer_bias,
+        )
 
         # used in .generate to reset decoder vocab size value after generation
         self._actual_vocab_size = self.decoder.config.vocab_size
 
         self.label_smoothing_loss_layer = None
         if self.config.label_smoothing > 0:
-            self.label_smoothing_loss_layer = LabelSmoothedCrossEntropy(eps=self.config.label_smoothing)
+            self.label_smoothing_loss_layer = LabelSmoothedCrossEntropy(
+                eps=self.config.label_smoothing
+            )
 
     def tie_weights(self):
         # for now no weights tying
@@ -129,9 +140,9 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
     def prepare_inputs_for_generation(self, input_ids, past, attention_mask, **kwargs):
         assert past is not None, "past has to be defined for encoder_outputs"
 
-        pointer_mask = kwargs.get('pointer_mask', None)
+        pointer_mask = kwargs.get("pointer_mask", None)
         if pointer_mask is None:
-            raise ValueError('pointer_mask should be specified')
+            raise ValueError("pointer_mask should be specified")
 
         input_batch_size = input_ids.shape[0]
         pointer_mask_batch_size = pointer_mask.shape[0]
@@ -158,26 +169,25 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
             "pointer_mask": pointer_mask,
         }
 
-    def generate(
-        self,
-        input_ids,
-        pointer_mask,
-        bos_token_id,
-        **kwargs
-    ) -> torch.LongTensor:
+    def generate(self, input_ids, pointer_mask, bos_token_id, **kwargs) -> torch.LongTensor:
         if input_ids.dim() != 2:
-            raise ValueError('input_ids should be of shape (batch_size, seq_len)')
+            raise ValueError("input_ids should be of shape (batch_size, seq_len)")
 
-        if kwargs.get('use_cache', False) is True:
+        if kwargs.get("use_cache", False) is True:
             # it is not clear what exactly use_cache is supposed to do
-            raise ValueError('caching decoder outputs is not supported, '
-                             'encoder output is cached regardless of this option')
-        kwargs['use_cache'] = False
+            raise ValueError(
+                "caching decoder outputs is not supported, "
+                "encoder output is cached regardless of this option"
+            )
+        kwargs["use_cache"] = False
 
         if input_ids.shape != pointer_mask.shape:
             # this bug may be tricky to catch layer, so better to validate it here
-            raise ValueError('input_ids and pointer_mask shapes do not align: '
-                             f'input_ids.shape={input_ids.shape}, pointer_mask.shape={pointer_mask.shape}')
+            raise ValueError(
+                "input_ids and pointer_mask shapes do not align:"
+                f" input_ids.shape={input_ids.shape},"
+                f" pointer_mask.shape={pointer_mask.shape}"
+            )
 
         # Tricky hack with dynamic output size. Beam search is using vocab size for reshaping
         # e.g. .view(batch_size, num_beams, vocab_size) however, in the case of pointer network,
@@ -186,7 +196,9 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         src_seq_len = input_ids.shape[1]
         self.config.decoder.vocab_size = self.output_vocab_size + src_seq_len
 
-        generated = super().generate(input_ids=input_ids, pointer_mask=pointer_mask, bos_token_id=bos_token_id, **kwargs)
+        generated = super().generate(
+            input_ids=input_ids, pointer_mask=pointer_mask, bos_token_id=bos_token_id, **kwargs,
+        )
 
         self.config.decoder.vocab_size = self._actual_vocab_size
 
@@ -255,7 +267,9 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         )
         decoder = transformers.BertModel(decoder_config)
 
-        return cls(encoder=encoder, decoder=decoder, max_src_len=max_src_len, model_args=model_args)
+        return cls(
+            encoder=encoder, decoder=decoder, max_src_len=max_src_len, model_args=model_args,
+        )
 
     def forward(
         self,
@@ -297,10 +311,16 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
                 decoder outputs,
                 encoder outputs,
         """
-        kwargs_encoder = {argument: value for argument, value in kwargs.items() if not argument.startswith("decoder_")}
+        kwargs_encoder = {
+            argument: value
+            for argument, value in kwargs.items()
+            if not argument.startswith("decoder_")
+        }
 
         kwargs_decoder = {
-            argument[len("decoder_") :]: value for argument, value in kwargs.items() if argument.startswith("decoder_")
+            argument[len("decoder_") :]: value
+            for argument, value in kwargs.items()
+            if argument.startswith("decoder_")
         }
 
         if encoder_outputs is None:
@@ -331,7 +351,9 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         )
 
         decoder_hidden_states = decoder_outputs[0]
-        assert decoder_hidden_states.shape[-1] == self.decoder.config.hidden_size, 'decoder has classification head'
+        assert (
+            decoder_hidden_states.shape[-1] == self.decoder.config.hidden_size
+        ), "decoder has classification head"
         # compute pointer scores via attending from decoder hiddens to encoder hiddens
 
         query = self.decoder_q_proj(decoder_hidden_states)  # (bs, tgt_len, decoder_hidden)
@@ -344,14 +366,12 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         # NOTE: we can use this mask to additionaly guide the model
         # batch size is passed using attention_scores tensor instead of input_ids
         # because while generating, input_ids can be None (using cached encoder_outputs)
-        pointer_mask = self._get_pointer_attention_mask(
-            pointer_mask, attention_scores.shape[0],
-        )
+        pointer_mask = self._get_pointer_attention_mask(pointer_mask, attention_scores.shape[0],)
 
         attention_scores_shape = attention_scores.shape
         attention_scores = attention_scores + pointer_mask
         # attention_scores = attention_scores * attention_scores.shape[-1] ** -0.5
-        assert attention_scores.shape == attention_scores_shape, 'attention scores changed shape'
+        assert attention_scores.shape == attention_scores_shape, "attention scores changed shape"
 
         # NOTE: maybe add some kind of normalization between dec_logits?
         decoder_logits = self.lm_head(decoder_hidden_states)  # (bs, tgt_len, tgt_vocab_size)
@@ -371,14 +391,14 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
 
         if self.label_smoothing_loss_layer is None:
             return F.cross_entropy(
-                input,
-                target,
-                ignore_index=self.decoder.embeddings.word_embeddings.padding_idx
+                input, target, ignore_index=self.decoder.embeddings.word_embeddings.padding_idx,
             )
 
         return self.label_smoothing_loss_layer(input, target, mask)
 
-    def _get_pointer_attention_mask(self, pointer_attention_mask=None, batch_size=None, device=None, dtype=None):
+    def _get_pointer_attention_mask(
+        self, pointer_attention_mask=None, batch_size=None, device=None, dtype=None
+    ):
         """
         :param pointer_attention_mask: FloatTensor of shape (batch_size, src_seq_len), padding mask for the pointer
             0 for masking and 1 for no masking
@@ -396,7 +416,7 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         # We use -1e4 for masking analogous to Transformers library
         # ideally, this number should depend on dtype and should be
         # bigger for float32 and smaller for float16 and bfloat16
-        return ((1. - pointer_attention_mask) * -1e4).unsqueeze(1)
+        return ((1.0 - pointer_attention_mask) * -1e4).unsqueeze(1)
 
     def _reorder_cache(self, past, beam_idx):
         return past

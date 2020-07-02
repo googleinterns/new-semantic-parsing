@@ -55,14 +55,15 @@ class TopSchemaTokenizer:
         source_ids: List = schema_tokenizer.encode(schema_str, source_ids)
 
     """
+
     def __init__(self, schema_vocab, src_text_tokenizer: transformers.PreTrainedTokenizer):
         """
         :param schema_vocab: iterable with all schema tokens (not source text tokens)
         :param src_text_tokenizer: transformers.PreTrainedTokenizer object
         """
-        self.pad_token = '[PAD]'
-        self.bos_token = '[BOS]'
-        self.eos_token = '[EOS]'
+        self.pad_token = "[PAD]"
+        self.bos_token = "[BOS]"
+        self.eos_token = "[EOS]"
 
         self._vocab = schema_vocab
         self._itos = [self.pad_token, self.bos_token, self.eos_token] + sorted(schema_vocab)
@@ -97,12 +98,14 @@ class TopSchemaTokenizer:
     def encode(self, schema_text, source_ids, max_length=None, pad_to_max_length=False):
         return self.encode_plus(schema_text, source_ids, max_length, pad_to_max_length).ids
 
-    def encode_plus(self, schema_text, source_ids, max_length=None, pad_to_max_length=False) -> SchemaItem:
+    def encode_plus(
+        self, schema_text, source_ids, max_length=None, pad_to_max_length=False
+    ) -> SchemaItem:
         # NOTE: this method should do the same things as .batch_encode_plus
         schema_tokens = self.tokenize(schema_text)
 
         if max_length is not None:
-            schema_tokens = schema_tokens[:max_length - 2]  # minus BOS and EOS
+            schema_tokens = schema_tokens[: max_length - 2]  # minus BOS and EOS
 
         schema_tokens = [self.bos_token] + schema_tokens + [self.eos_token]
 
@@ -127,14 +130,19 @@ class TopSchemaTokenizer:
 
         # points to a first token corresponding to a word
         has_cls = (
-            self.src_tokenizer.cls_token is not None and
-            self.src_tokenizer.cls_token_id in src_token_ids
+            self.src_tokenizer.cls_token is not None
+            and self.src_tokenizer.cls_token_id in src_token_ids
         )
         src_tokens_pointer = int(has_cls)
 
         for i, token in enumerate(schema_tokens):
-            token_follows_schema = (token in {'[', ']', 'IN:', 'SL:', *self.special_tokens}
-                                    or schema_tokens[i-1] in {'IN:', 'SL:'})
+            token_follows_schema = token in {
+                "[",
+                "]",
+                "IN:",
+                "SL:",
+                *self.special_tokens,
+            } or schema_tokens[i - 1] in {"IN:", "SL:"}
             if token in self._stoi and token_follows_schema:
                 # The reason for second condition are cases when a word from a text exacly equal to the schema word
                 # e.g. "IS THERE A PATH"
@@ -156,7 +164,8 @@ class TopSchemaTokenizer:
 
     def decode(self, ids, source_ids, skip_special_tokens=True):
         schema = []
-        text_chunk_ids = []  # we combine text into chunks to that it would be easier to merge bpe tokens into words
+        # we combine text into chunks to that it would be easier to merge bpe tokens into words
+        text_chunk_ids = []
 
         for i in ids:
             if i < self.vocab_size:
@@ -194,18 +203,18 @@ class TopSchemaTokenizer:
         """
         os.makedirs(path)
 
-        with open(path_join(path, 'schema_vocab.txt'), 'w') as f:
-            f.write('\n'.join(self._vocab))
+        with open(path_join(path, "schema_vocab.txt"), "w") as f:
+            f.write("\n".join(self._vocab))
 
         self.src_tokenizer.save_pretrained(path)
 
-        with open(path_join(path, 'config.json'), 'w') as f:
-            json.dump({'model_type': encoder_model_type}, f)
+        with open(path_join(path, "config.json"), "w") as f:
+            json.dump({"model_type": encoder_model_type}, f)
 
     @classmethod
     def load(cls, path: str):
-        with open(path_join(path, 'schema_vocab.txt')) as f:
-            schema_vocab = set(f.read().strip('\n').split('\n'))
+        with open(path_join(path, "schema_vocab.txt")) as f:
+            schema_vocab = set(f.read().strip("\n").split("\n"))
 
         text_tokenizer = transformers.AutoTokenizer.from_pretrained(path)
 
@@ -214,34 +223,34 @@ class TopSchemaTokenizer:
     @staticmethod
     def tokenize(text):
         # TODO: make a faster regex version
-        tokenized = ''
+        tokenized = ""
         for char in text:
-            if char in ['[', ']']:
-                char = ' ' + char + ' '
-            if char in [':']:
-                char = char + ' '
+            if char in ["[", "]"]:
+                char = " " + char + " "
+            if char in [":"]:
+                char = char + " "
             tokenized += char
-        tokens = tokenized.strip(' ').split(' ')
-        tokens = [t for t in tokens if t != '']
+        tokens = tokenized.strip(" ").split(" ")
+        tokens = [t for t in tokens if t != ""]
         return tokens
 
     @staticmethod
     def detokenize(tokens):
-        merge_vocab = {'[', 'IN:', 'SL:'}
-        text = ''
+        merge_vocab = {"[", "IN:", "SL:"}
+        text = ""
 
         for token in tokens:
             if token in merge_vocab:
                 text += token
             else:
-                text += token + ' '
+                text += token + " "
 
-        return text.strip(' ')
+        return text.strip(" ")
 
     @staticmethod
     def postprocess(text):
         """TOP format expects tokenized words and punctuation"""
-        stripped_symbols = ['.', ',', '?', '!', ';']
+        stripped_symbols = [".", ",", "?", "!", ";"]
         postprocessed = text[0]
 
         is_abbr = False
@@ -254,7 +263,7 @@ class TopSchemaTokenizer:
 
             # do not strip dots for capital latters
             # e.g. D.C.
-            if text[i-1].isupper() and text[i] == '.':
+            if text[i - 1].isupper() and text[i] == ".":
                 is_abbr = True
                 postprocessed += text[i]
                 continue
@@ -262,36 +271,36 @@ class TopSchemaTokenizer:
             # do not strip dots for capital latters
             # e.g. D. C . -> D.C.
             # NOTE: it should be "D.C ." to match the TOP format
-            if is_abbr and text[i-1] == '.' and text[i] == ' ' and text[i+1].isupper():
+            if is_abbr and text[i - 1] == "." and text[i] == " " and text[i + 1].isupper():
                 continue
 
             # all abbreviations should be hadled upper
             is_abbr = False
 
             # strip punctuation
-            if text[i-1] != ' ' and text[i] in stripped_symbols:
-                postprocessed += ' ' + text[i]
+            if text[i - 1] != " " and text[i] in stripped_symbols:
+                postprocessed += " " + text[i]
                 continue
 
-            if text[i-1] in stripped_symbols and text[i] != ' ':
-                postprocessed += ' ' + text[i]
+            if text[i - 1] in stripped_symbols and text[i] != " ":
+                postprocessed += " " + text[i]
                 continue
 
             # strip apostrophe for posessive nouns
-            if text[i-1] != ' ' and text[i:i+2] == "'s":
-                postprocessed += ' ' + text[i]
+            if text[i - 1] != " " and text[i : i + 2] == "'s":
+                postprocessed += " " + text[i]
                 continue
 
             # merge apostrophe with the next symbol
             # used when posessive noun is a slot value
             # e.g. "[SL:CONTACT Vlad] ' s"
-            if text[i-1] == "'" and text[i] == ' ' and text[i+1] == "s":
+            if text[i - 1] == "'" and text[i] == " " and text[i + 1] == "s":
                 continue
 
             postprocessed += text[i]
 
         # time
-        postprocessed = postprocessed.replace('a . m', 'a.m')
-        postprocessed = postprocessed.replace('p . m', 'p.m')
+        postprocessed = postprocessed.replace("a . m", "a.m")
+        postprocessed = postprocessed.replace("p . m", "p.m")
 
         return postprocessed

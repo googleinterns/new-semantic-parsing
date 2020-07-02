@@ -19,7 +19,8 @@
 # Trainer.get_optimizers is modified to support different lr for encoder and decoder
 # Trainer.train is modified to calculate metrics on train set and to log train metrics more frequently
 
-
+# do not black this file as it mostly repeats tranformers.Trainer
+# fmt: off
 import os
 import logging
 from typing import List, Tuple, Dict, Optional
@@ -29,7 +30,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data.distributed import DistributedSampler
-from torch.utils.data.sampler import RandomSampler, Sampler, SequentialSampler
 from torch.utils.data.dataloader import DataLoader
 from tqdm.auto import tqdm, trange
 
