@@ -291,18 +291,9 @@ class EncoderDecoderWPointerOverfitTest(unittest.TestCase):
             '[IN:GET_DIRECTIONS Get directions to [SL:DESTINATION Mountain View]]'
         ]
 
-        source_ids = [tokenizer.encode(t) for t in source_texts]
-        source_pointer_masks = [get_src_pointer_mask(i, tokenizer) for i in source_ids]
+        pairs = [schema_tokenizer.encode_pair(t, s) for t, s in zip(schema_texts, source_texts)]
 
-        schema_ids = []
-        schema_pointer_masks = []
-
-        for src_id, schema in zip(source_ids, schema_texts):
-            item = schema_tokenizer.encode_plus(schema, src_id)
-            schema_ids.append(item.ids)
-            schema_pointer_masks.append(item.pointer_mask)
-
-        dataset = PointerDataset(source_ids, schema_ids, source_pointer_masks, schema_pointer_masks)
+        dataset = PointerDataset.from_pair_items(pairs)
         dataset.torchify()
 
         return dataset, tokenizer, schema_tokenizer

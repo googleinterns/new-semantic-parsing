@@ -19,12 +19,15 @@ from os.path import join as path_join
 
 import transformers
 
-from new_semantic_parsing.dataclasses import SchemaItem
+from new_semantic_parsing import utils
+from new_semantic_parsing.dataclasses import SchemaItem, PairItem
 
 
 class TopSchemaTokenizer:
     """
     Used for TOP schema tokenization
+
+    used for *both* source sentence and schema
 
     encodes schema into token_ids from schema_vocab
     and words into position-based ids
@@ -32,6 +35,25 @@ class TopSchemaTokenizer:
     word_id = tokenizer.vocab_size + position
 
     [CLS] token is ignored for position calculation
+
+    Usage:
+        tokenizer = transformers.AutoTokenizer.from_pretrained('bert-base-cased')
+        schema_vocab = reduce(set.union, map(utils.get_vocab_top_schema, schema_examples))
+        schema_tokenizer = TopSchemaTokenizer(schema_vocab, tokenizer)
+
+        # encode pair
+        source_str = 'Go to Mountain View'
+        schema_str = '[IN:GET_DIRECTIONS Go to [SL:Location Mountain View]]'
+
+        pair: PairItem = schema_tokenizer.encode_pair(source_str, schema_str)
+
+        # Alternatively:
+        # 1. encode source
+        source_ids: List = schema_tokenizer.encode_source(source_str)
+
+        # 2. encode schema
+        source_ids: List = schema_tokenizer.encode(schema_str, source_ids)
+
     """
     def __init__(self, schema_vocab, src_text_tokenizer: transformers.PreTrainedTokenizer):
         """
@@ -151,6 +173,20 @@ class TopSchemaTokenizer:
         schema = self.detokenize(schema)
         return schema
 
+    def encode_pair(self, schema_text, source_text) -> PairItem:
+        source_ids = self.encode_source(source_text)
+        schema_item = self.encode_plus(schema_text, source_ids)
+        schema_ids = schema_item.ids
+
+        source_pointer_mask = utils.get_src_pointer_mask(source_ids, self.src_tokenizer)
+        schema_pointer_mask = schema_item.pointer_mask
+
+        pair = PairItem(source_ids, source_pointer_mask, schema_ids, schema_pointer_mask)
+        return pair
+
+    def encode_source(self, source_text):
+        return self.src_tokenizer.encode(source_text)
+
     def save(self, path, encoder_model_type):
         """
         Save schema tokenizer and text tokenizer
@@ -189,7 +225,8 @@ class TopSchemaTokenizer:
         tokens = [t for t in tokens if t != '']
         return tokens
 
-    def detokenize(self, tokens):
+    @staticmethod
+    def detokenize(tokens):
         merge_vocab = {'[', 'IN:', 'SL:'}
         text = ''
 

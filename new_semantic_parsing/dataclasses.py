@@ -44,6 +44,13 @@ class SchemaItem:
     def __len__(self):
         return len(self.ids)
 
+@dataclass
+class PairItem:
+    src_ids: List[int]
+    src_pointer_mask: List[int]
+    tgt_ids: List[int]
+    tgt_pointer_mask: List[int]
+
 
 @dataclass
 class Seq2SeqEvalPrediciton:

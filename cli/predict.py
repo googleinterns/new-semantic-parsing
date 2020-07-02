@@ -76,10 +76,10 @@ def parse_args(args=None):
     return args
 
 
-def make_test_dataset(filepath, text_tokenizer, max_len=None):
+def make_test_dataset(filepath, schema_tokenizer, max_len=None):
     data = pd.read_table(filepath, names=['text', 'tokens', 'schema'])
 
-    text_ids: List[list] = [text_tokenizer.encode(text) for text in tqdm(data.tokens, desc='tokenization')]
+    text_ids: List[list] = [schema_tokenizer.encode_source(text) for text in tqdm(data.tokens, desc='tokenization')]
     if max_len is not None:
         text_ids = [t[:max_len] for t in text_ids]
 
@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     try:
         data_df = pd.read_table(args.data, names=['text', 'tokens', 'schema'])
-        dataset_with_labels = make_dataset(args.data, text_tokenizer, schema_tokenizer)
+        dataset_with_labels = make_dataset(args.data, schema_tokenizer)
         targets_str = list(data_df.schema)
 
         exact_match_str = sum(int(p == t) for p, t in zip(predictions_str, targets_str)) / len(targets_str)

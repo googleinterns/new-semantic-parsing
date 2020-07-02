@@ -14,9 +14,8 @@
 # =============================================================================
 
 import torch
-import transformers
 
-from new_semantic_parsing.dataclasses import InputDataClass, List, Tensor
+from new_semantic_parsing.dataclasses import InputDataClass, List, Tensor, PairItem
 
 
 class PointerDataset(torch.utils.data.Dataset):
@@ -43,6 +42,21 @@ class PointerDataset(torch.utils.data.Dataset):
         self.torchified = all(map(self._check_torchified, [
             source_tensors, source_pointer_masks, target_tensors, target_pointer_masks,
         ]))
+
+    @classmethod
+    def from_pair_items(cls, items: List[PairItem]):
+        source_tensors = []
+        target_tensors = []
+        source_pointer_masks = []
+        target_pointer_masks = []
+
+        for item in items:
+            source_tensors.append(item.src_ids)
+            target_tensors.append(item.tgt_ids)
+            source_pointer_masks.append(item.src_pointer_mask)
+            target_pointer_masks.append(item.tgt_pointer_mask)
+
+        return cls(source_tensors, target_tensors, source_pointer_masks, target_pointer_masks)
 
     def __len__(self):
         return len(self.source_tensors)

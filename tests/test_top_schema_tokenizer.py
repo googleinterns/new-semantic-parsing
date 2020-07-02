@@ -18,6 +18,7 @@ import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
+import transformers
 from new_semantic_parsing.schema_tokenizer import TopSchemaTokenizer
 
 
@@ -123,6 +124,15 @@ class TopSchemaTokenizerTest(unittest.TestCase):
 
         ids = tokenizer.encode(schema_str, source_tokens)
         self.assertSequenceEqual(ids, expected_ids)
+
+    # def test_encode_source_roberta(self):
+    #     src = "Encode this ! weird text ?"
+    #     src_tokenizer = transformers.AutoTokenizer.from_pretrained('roberta-base')
+    #     schema_tokenizer = TopSchemaTokenizer({}, src_tokenizer)
+    #
+    #     encoding = schema_tokenizer.encode_source(src)
+    #     decoded = schema_tokenizer.src_tokenizer.decode(encoding)
+    #     self.assertSequenceEqual(src, decoded)
 
     def test_save_load(self):
         vocab = ['[', ']', 'IN:', 'INTENT1', 'SL:', 'SLOT1']

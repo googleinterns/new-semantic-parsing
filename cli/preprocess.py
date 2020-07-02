@@ -77,24 +77,13 @@ def parse_args(args=None):
     return args
 
 
-def make_dataset(filepath, text_tokenizer, schema_tokenizer):
+def make_dataset(filepath, schema_tokenizer: TopSchemaTokenizer):
     data = pd.read_table(filepath, names=['text', 'tokens', 'schema'])
 
-    text_ids: List[list] = [text_tokenizer.encode(text) for text in tqdm(data.tokens)]
-    # TODO: move everything below to .encode_plus (and add torchification?)
-    # NOTE: slow
-    text_pointer_masks: List[list] = [utils.get_src_pointer_mask(i, text_tokenizer) for i in text_ids]
+    pairs = [schema_tokenizer.encode_pair(text, schema) for text, schema
+             in tqdm(zip(data.tokens, data.schema))]
 
-    schema_ids = []
-    schema_pointer_masks = []
-
-    for i, schema in tqdm(enumerate(data.schema), total=len(data)):
-
-        item: SchemaItem = schema_tokenizer.encode_plus(schema, text_ids[i])
-        schema_ids.append(item.ids)
-        schema_pointer_masks.append(item.pointer_mask)
-
-    dataset = PointerDataset(text_ids, schema_ids, text_pointer_masks, schema_pointer_masks)
+    dataset = PointerDataset.from_pair_items(pairs)
     dataset.torchify()
 
     return dataset
@@ -129,11 +118,11 @@ if __name__ == '__main__':
     schema_tokenizer = TopSchemaTokenizer(schema_vocab, text_tokenizer)
 
     logger.info('Tokenizing train dataset')
-    train_dataset = make_dataset(os.path.join(args.data, 'train.tsv'), text_tokenizer, schema_tokenizer)
+    train_dataset = make_dataset(os.path.join(args.data, 'train.tsv'), schema_tokenizer)
 
     logger.info('Tokenizing validation and test datasets')
-    valid_dataset = make_dataset(os.path.join(args.data, 'eval.tsv'), text_tokenizer, schema_tokenizer)
-    test_dataset = make_dataset(os.path.join(args.data, 'test.tsv'), text_tokenizer, schema_tokenizer)
+    valid_dataset = make_dataset(os.path.join(args.data, 'eval.tsv'), schema_tokenizer)
+    test_dataset = make_dataset(os.path.join(args.data, 'test.tsv'), schema_tokenizer)
 
     logger.info(f'Saving everything to {output_dir}')
     os.makedirs(args.output_dir)
