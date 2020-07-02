@@ -250,6 +250,9 @@ class TopSchemaTokenizer:
     @staticmethod
     def postprocess(text):
         """TOP format expects tokenized words and punctuation"""
+        if len(text) == 0:
+            return ""
+
         stripped_symbols = [".", ",", "?", "!", ";"]
         postprocessed = text[0]
 
