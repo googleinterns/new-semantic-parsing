@@ -13,41 +13,68 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
-from torch.optim.lr_scheduler import LambdaLR
+from itertools import chain
+
 import torch
+from torch.optim.lr_scheduler import LambdaLR
 
 
-def get_optimizers(model, num_frozen_encoder_steps, training_args):
-    """
-    Setup the optimizer and the learning rate scheduler.
+def get_optimizers(model, learning_rate, warmup_steps, num_frozen_encoder_steps, weight_decay=0):
+    """Setups the optimizer and the learning rate scheduler.
 
-    Provides different learning rates for the encoder and decoder if args.learning_rate is a dict with
-    keys 'encoder_lr' and 'decoder_lr'
+    Creates optimizer which can update encoder and decoder with different learning rates
+    and scheduler which increases lr for warmup_steps and does not update encoder
+    for num_frozen_encoder_steps.
+
+    Args:
+        model: EncoderDecoderWPointerModel.
+        learning_rate: either float or dict with keys 'encoder_lr' and 'decoder_lr'.
+        warmup_steps: number of steps at the start of the training when the learning rate
+            is increased from zero to learning_rate value.
+        num_frozen_encoder_steps: number of steps at the start of the training when encoder weights
+            are not updated.
+        weight_decay: optimizer weight_decay.
+
+    Returns:
+        A tuple with two values: torch Optimizer and torch LambdaLR scheduler.
     """
 
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ["bias", "LayerNorm.weight"]
 
-    lr = training_args.learning_rate
+    lr = learning_rate
     if isinstance(lr, float):
         encoder_lr = decoder_lr = lr
     elif isinstance(lr, dict):
         encoder_lr = lr.get("encoder_lr", 0)
         decoder_lr = lr.get("decoder_lr", 0)
     else:
-        raise ValueError("learning_rate should be eigher float or dict")
+        raise ValueError("learning_rate should be either float or dict")
+
+    # decoder parameters include prediction head and pointer network
+    # optionally, they also include the module which projects encoder representations
+    # into decoder-sized dimension
+    to_chain = [
+        model.decoder.named_parameters(),
+        model.lm_head.named_parameters(),
+        model.decoder_q_proj.named_parameters(),
+    ]
+    if model.enc_dec_proj is not None:
+        to_chain.append(model.enc_dec_proj)
+
+    decoder_parameters = chain(*to_chain)
 
     # fmt: off
     optimizer_grouped_parameters = [
         {
-            "params": [p for n, p in model.decoder.named_parameters() if not any(nd in n for nd in no_decay)],
+            "params": [p for n, p in decoder_parameters if not any(nd in n for nd in no_decay)],
             "initial_lr": decoder_lr,
             "lr": decoder_lr,
-            "weight_decay": training_args.weight_decay,
+            "weight_decay": weight_decay,
             "group_type": "decoder_params",
         },
         {
-            "params": [p for n, p in model.decoder.named_parameters() if any(nd in n for nd in no_decay)],
+            "params": [p for n, p in decoder_parameters if any(nd in n for nd in no_decay)],
             "initial_lr": decoder_lr,
             "lr": decoder_lr,
             "weight_decay": 0.0,
@@ -61,7 +88,7 @@ def get_optimizers(model, num_frozen_encoder_steps, training_args):
                 "params": [p for n, p in model.encoder.named_parameters() if not any(nd in n for nd in no_decay)],
                 "initial_lr": encoder_lr,
                 "lr": encoder_lr,
-                "weight_decay": training_args.weight_decay,
+                "weight_decay": weight_decay,
                 "group_type": "encoder_params",
             },
             {
@@ -74,13 +101,11 @@ def get_optimizers(model, num_frozen_encoder_steps, training_args):
         ])
     # fmt: on
 
-    optimizer = torch.optim.Adam(
-        optimizer_grouped_parameters, eps=training_args.adam_epsilon, betas=(0.9, 0.98)
-    )
+    optimizer = torch.optim.Adam(optimizer_grouped_parameters, eps=1e-9, betas=(0.9, 0.98))
 
     scheduler = get_noam_schedule_with_gradual_unfreezing(
         optimizer,
-        num_warmup_steps=training_args.warmup_steps,
+        num_warmup_steps=warmup_steps,
         model_size=model.decoder.config.hidden_size,
         num_frozen_encoder_steps=num_frozen_encoder_steps,
     )

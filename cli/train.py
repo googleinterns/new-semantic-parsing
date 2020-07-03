@@ -237,7 +237,11 @@ if __name__ == "__main__":
     # number of batches not considering gradient accumulation
     epoch_len = len(train_dataset) // args.batch_size + int(len(train_dataset) % args.batch_size)
     optimizer_scheduler = optimization.get_optimizers(
-        model, args.num_frozen_encoder_steps, train_args
+        model=model,
+        learning_rate=lr,
+        warmup_steps=args.warmup_steps,
+        num_frozen_encoder_steps=args.num_frozen_encoder_steps,
+        weight_decay=args.weight_decay,
     )
 
     meter = utils.MetricsMeter(
