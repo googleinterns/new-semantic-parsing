@@ -106,7 +106,7 @@ if __name__ == "__main__":
 
     logger.info("Loading data")
     dataset: PointerDataset = make_test_dataset(
-        args.data, text_tokenizer, max_len=args.src_max_len
+        args.data, schema_tokenizer, max_len=args.src_max_len
     )
     dataloader = torch.utils.data.DataLoader(
         dataset,
