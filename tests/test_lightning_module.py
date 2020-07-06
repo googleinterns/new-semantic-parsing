@@ -70,7 +70,7 @@ class LightningModuleTest(unittest.TestCase):
         out = self.module.training_step(batch=self.test_batch, batch_idx=0)
 
         loss = out["loss"]
-        logged_loss = out["log"]["train_loss"]
+        logged_loss = out["log"]["loss"]
         self.assertTrue(torch.isclose(loss, logged_loss))
         self.assertIsInstance(loss, torch.FloatTensor)
 
