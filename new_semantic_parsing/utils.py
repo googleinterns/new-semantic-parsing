@@ -109,10 +109,43 @@ class MetricsMeter:
         }
 
 
-def get_lr(model: transformers.PreTrainedModel):
-    """Get optimal learning rate according to the Scaling Laws
-    https://arxiv.org/abs/2001.08361
+def compute_metrics_from_batch(predictions, labels, masks, stop_tokens):
+    """Compute metrics where all predictions, labels and masks are torch.tensor"""
+    device = predictions.device
 
+    # correct tokens which are not masked (masked tokens have mask == 0)
+    n_correct = ((predictions == labels) & masks.bool()).sum()
+    n_total = masks.sum()
+    accuracy = n_correct / n_total.float()
+
+    # trauncate until EOS token
+    # for exact match we consider all tokens until EOS/PAD
+    # this is closer to inference setup when generation stops after EOS/PAD
+
+    def truncate(pred):
+        i = 0
+        for i, idx in enumerate(pred):
+            if idx in stop_tokens:
+                break
+        return pred[:i]
+
+    truncated_preds = [truncate(p) for p in predictions.detach().unbind()]
+    truncated_labels = [truncate(l) for l in labels.detach().unbind()]
+
+    exact_match = sum(
+        (p.shape == l.shape and torch.all(p == l))
+        for p, l in zip(truncated_preds, truncated_labels)
+    )
+    exact_match = torch.tensor(exact_match, device=device)
+    exact_match = exact_match.float() / len(truncated_preds)
+
+    return {"accuracy": accuracy, "exact_match": exact_match}
+
+
+def get_lr(model: transformers.PreTrainedModel):
+    """Get optimal learning rate according to the Scaling Laws.
+
+    https://arxiv.org/abs/2001.08361
     lr ~= 0.003239 - 0.0001395 log(n_non_embedding_params)
     """
 

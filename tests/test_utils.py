@@ -13,6 +13,8 @@
 # limitations under the License.
 # =============================================================================
 import unittest
+
+import torch
 import numpy as np
 
 from new_semantic_parsing import utils
@@ -118,3 +120,43 @@ class TestGetMetrics(unittest.TestCase):
 
         self.assertAlmostEqual(metrics["accuracy"], expected_accuracy)
         self.assertAlmostEqual(metrics["exact_match"], expected_exact_match)
+
+
+class TestGetMetircsTorch(unittest.TestCase):
+    def test_metrics_computation(self):
+        x = torch.tensor(
+            [
+                [1, 2, 3, 4, 5, 6, 0, 0, 0],
+                [1, 3, 5, 7, 9, 0, 0, 0, 0],
+                [19, 18, 17, 16, 18, 13, 19, 0, 0],
+            ]
+        )
+
+        y = torch.tensor(
+            [
+                [3, 2, 8, 4, 5, 5, 0, 0, 0],
+                [1, 3, 5, 7, 9, 0, 0, 0, 0],
+                [19, 8, 17, 16, 18, 5, 1, 0, 0],
+            ]
+        )
+
+        m = torch.tensor(
+            [
+                [0, 1, 0, 1, 1, 0, 0, 0, 0],
+                [1, 1, 1, 1, 1, 0, 0, 0, 0],
+                [1, 1, 0, 1, 1, 0, 0, 0, 0],
+            ]
+        )
+
+        assert x.shape == y.shape
+        assert y.shape == m.shape
+
+        stop_tokens = [5, 0]
+        metrics = utils.compute_metrics_from_batch(x, y, m, stop_tokens)
+
+        # NOTE: we expect micro averaging
+        expected_accuracy = 0.91666666666
+        expected_exact_match = 0.33333333333  # mask is not used for EM, only truncation
+
+        self.assertTrue(metrics["accuracy"].numpy(), expected_accuracy)
+        self.assertTrue(metrics["exact_match"].numpy(), expected_exact_match)

@@ -15,8 +15,6 @@
 import os
 import sys
 import json
-import tempfile
-import argparse
 import logging
 from os.path import join as path_join
 
@@ -26,13 +24,20 @@ import wandb
 import transformers
 import pandas as pd
 
+from pytorch_lightning import Trainer
+from pytorch_lightning import callbacks
+from pytorch_lightning.loggers import WandbLogger
+
 from new_semantic_parsing import (
     EncoderDecoderWPointerModel,
     TopSchemaTokenizer,
-    Seq2SeqTrainer,
 )
-from new_semantic_parsing.data import Seq2SeqDataCollator, PointerDataset
-from new_semantic_parsing import utils, SAVE_FORMAT_VERSION, optimization
+from new_semantic_parsing.data import PointerDataset, Seq2SeqDataCollator
+from new_semantic_parsing import utils, SAVE_FORMAT_VERSION
+from new_semantic_parsing.lightning_module import PointerModule
+
+from cli.train import parse_args
+
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -43,102 +48,16 @@ logging.basicConfig(
 logger = logging.getLogger(__file__)
 
 
-def parse_args(args=None):
-    parser = argparse.ArgumentParser()
-
-    # fmt: off
-
-    # files
-    parser.add_argument('--data-dir', required=True,
-                        help='Path to preprocess.py --save-dir containing tokenizer, '
-                             'data.pkl, and args.toml')
-    parser.add_argument('--output-dir', default=None,
-                        help='directory to store checkpoints and other output files')
-    # model
-    parser.add_argument('--encoder-model', default=None,
-                        help='pretrained model name, e.g. bert-base-uncased')
-    parser.add_argument('--layers', default=None, type=int,
-                        help='number of layers in the encoder. '
-                             'Only used if --encoder-model is not provided.')
-    parser.add_argument('--hidden', default=None, type=int,
-                        help='hidden size of the encoder. '
-                             'Only used if --encoder-model is not provided.')
-    parser.add_argument('--heads', default=None, type=int,
-                        help='hidden size of the encoder. '
-                             'Only used if --encoder-model is not provided.')
-    parser.add_argument('--decoder-layers', default=None, type=int,
-                        help='number of layers in the decoder. '
-                             'Equal to the number of the encoder layers by default')
-    parser.add_argument('--decoder-hidden', default=None, type=int,
-                        help='hidden size of the decoder. '
-                             'Equal to the hidden side of the encoder by default')
-    parser.add_argument('--decoder-heads', default=None, type=int,
-                        help='hidden size of the decoder. '
-                             'Equal to the number of the encoder heads by default')
-
-    # model architecture changes
-    parser.add_argument('--use-pointer-bias', default=False, action='store_true',
-                        help='Use bias in pointer network')
-    parser.add_argument('--decoder-head-type', default='ffn', choices=['ffn', 'linear'],
-                        help='Type of network used to make logits from the last decoder state')
-
-    # training
-    parser.add_argument('--epochs', default=1, type=int)
-    parser.add_argument('--early-stopping', default=None, type=int,
-                        help='Lightning-only. Early stopping patience. No early stopping by default.')
-    parser.add_argument('--seed', default=1, type=int)
-    parser.add_argument('--lr', default=None, type=float,
-                        help='By default, lr is chosen according to the Scaling Laws for Neural Language Models')
-    parser.add_argument('--encoder-lr', default=None, type=float,
-                        help='Encoder learning rate, overrides --lr')
-    parser.add_argument('--decoder-lr', default=None, type=float,
-                        help='Decoder learning rate, overrides --lr')
-    parser.add_argument('--weight-decay', default=0, type=float)
-    parser.add_argument('--dropout', default=0.1, type=float,
-                        help='dropout amount for the encoder and decoder, default value 0.1 is from Transformers')
-    parser.add_argument('--warmup-steps', default=1, type=int)
-    parser.add_argument('--gradient-accumulation-steps', default=1, type=int)
-    parser.add_argument('--batch-size', default=64, type=int)
-    parser.add_argument('--max-grad-norm', default=1.0, type=float)
-    parser.add_argument('--num-frozen-encoder-steps', default=0, type=int,
-                        help='number of steps with encoder weights not being updated')
-    parser.add_argument('--label-smoothing', default=0.1, type=float)
-
-    # misc
-    parser.add_argument('--wandb-project', default=None)
-    parser.add_argument('--log-every', default=100, type=int)
-    parser.add_argument('--tag', default=None)
-    parser.add_argument('--fp16', default=False, action='store_true')
-    parser.add_argument('--gpus', default=None, type=int,
-                        help='Lightning-only. Number of gpus to train the model on')
-
-    # fmt: on
-
-    args = parser.parse_args(args)
-
-    # set defaults for None fields
-    if (args.encoder_lr is not None) ^ (args.decoder_lr is not None):
-        raise ValueError("--encoder-lr and --decoder-lr should be both specified")
-
-    args.decoder_layers = args.decoder_layers or args.layers
-    args.decoder_hidden = args.decoder_hidden or args.hidden
-    args.decoder_heads = args.decoder_heads or args.heads
-    args.wandb_project = args.wandb_project or "new_semantic_parsing"
-    args.tag = [args.tag] if args.tag else []  # list is required by wandb interface
-
-    if args.gpus is None:
-        args.gpus = 1 if torch.cuda.is_available() else 0
-
-    if args.output_dir is None:
-        args.output_dir = os.path.join("output_dir", next(tempfile._get_candidate_names()))
-
-    return args
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    wandb.init(project=args.wandb_project, config=args, tags=args.tag)
+    utils.set_seed(args.seed)
+
+    wandb_logger = WandbLogger(project=args.wandb_project, tags=args.tag)
+    wandb_logger.log_hyperparams(args)
 
     if os.path.exists(args.output_dir):
         raise ValueError(f"output_dir {args.output_dir} already exists")
@@ -226,64 +145,61 @@ if __name__ == "__main__":
     if args.encoder_lr is not None and args.decoder_lr is not None:
         lr = {"encoder_lr": args.encoder_lr, "decoder_lr": args.decoder_lr}
 
-    train_args = transformers.TrainingArguments(
-        output_dir=args.output_dir,
-        do_train=True,
-        do_eval=True,
-        num_train_epochs=args.epochs,
-        seed=args.seed,
-        evaluate_during_training=True,
-        per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        learning_rate=lr,
-        weight_decay=args.weight_decay,
-        max_grad_norm=args.max_grad_norm,
-        warmup_steps=args.warmup_steps,
-        logging_steps=args.log_every,
-        save_steps=1000,
-        save_total_limit=1,
-        fp16=args.fp16,
-        adam_epsilon=1e-9,
-        local_rank=-1,
-    )
+    # /\ /\ copy of the train.py
 
-    collator = Seq2SeqDataCollator(text_tokenizer.pad_token_id, schema_tokenizer.pad_token_id)
-
-    # number of batches not considering gradient accumulation
-    epoch_len = len(train_dataset) // args.batch_size + int(len(train_dataset) % args.batch_size)
-    optimizer_scheduler = optimization.get_optimizers(
+    lightning_module = PointerModule(
         model=model,
-        learning_rate=lr,
+        schema_tokenizer=schema_tokenizer,
+        train_dataset=train_dataset,
+        valid_dataset=eval_dataset,
+        lr=args.lr,
+        batch_size=args.batch_size,
         warmup_steps=args.warmup_steps,
         num_frozen_encoder_steps=args.num_frozen_encoder_steps,
-        weight_decay=args.weight_decay,
+        log_every=args.log_every,
     )
 
-    meter = utils.MetricsMeter(
-        stop_token_ids=[schema_tokenizer.eos_token_id, schema_tokenizer.pad_token_id]
+    wandb_logger.watch(lightning_module, log="all", log_freq=args.log_every)
+
+    checkpoint_callback = callbacks.ModelCheckpoint(
+        filepath=args.output_dir,
+        save_top_k=True,
+        verbose=False,
+        monitor="eval_exact_match",
+        mode="max",
+        prefix="",
     )
 
-    # Trainer wandb interface:
-    os.environ["WANDB_PROJECT"] = args.wandb_project
-    os.environ["WANDB_WATCH"] = "all"
+    early_stopping = False
+    if args.early_stopping is not None:
+        early_stopping = callbacks.EarlyStopping(
+            monitor="eval_exact_match",
+            patience=args.early_stopping,
+            strict=False,
+            verbose=False,
+            mode="max",
+        )
 
-    # force tensorboard off
-    transformers.trainer.is_tensorboard_available = lambda: False
+    lr_logger = callbacks.LearningRateLogger()
 
-    trainer = Seq2SeqTrainer(
-        model,
-        train_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=collator.collate_batch,
-        compute_metrics=meter.compute_metrics,
-        optimizers=optimizer_scheduler,
+    trainer = Trainer(
+        logger=wandb_logger,
+        max_epochs=args.epochs,
+        gpus=args.gpus,
+        accumulate_grad_batches=args.gradient_accumulation_steps,
+        checkpoint_callback=checkpoint_callback,
+        early_stop_callback=early_stopping,
+        gradient_clip_val=args.max_grad_norm,
+        precision=16 if args.fp16 else 32,
+        row_log_interval=args.log_every,
+        callbacks=[lr_logger],
     )
 
-    train_results = trainer.train()
-    logger.info(train_results)
+    trainer.fit(lightning_module)
 
-    trainer.save_model(args.output_dir)
+    lightning_module.state_dict()
+
+    # \/ \/ copy of the train.py
 
     with open(path_join(args.data_dir, "tokenizer", "config.json")) as f:
         model_type = json.load(f)["model_type"]
@@ -295,12 +211,6 @@ if __name__ == "__main__":
         args_dict = {"version": SAVE_FORMAT_VERSION, **vars(args)}
         toml.dump(args_dict, f)
 
-    model.eval()
-
-    eval_results = trainer.evaluate()
-    logger.info("Final eval results")
-    logger.info(eval_results)
-
     logger.info("Training finished!")
 
     logger.info("Generating predictions")
@@ -311,13 +221,14 @@ if __name__ == "__main__":
         num_workers=8,
     )
 
+    # TODO: hardcoded devices, move evaluation logic to PointerModule
     predictions_ids, predictions_str = utils.iterative_prediction(
         model=model,
         dataloader=dataloader,
         schema_tokenizer=schema_tokenizer,
         max_len=63,
         num_beams=1,
-        device=trainer.args.device,
+        device="cuda" if torch.cuda.is_available() else "cpu",
     )
 
     # Finish the script if evaluation texts are not available
