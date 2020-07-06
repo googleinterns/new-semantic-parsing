@@ -152,7 +152,7 @@ if __name__ == "__main__":
         schema_tokenizer=schema_tokenizer,
         train_dataset=train_dataset,
         valid_dataset=eval_dataset,
-        lr=args.lr,
+        lr=lr,
         batch_size=args.batch_size,
         warmup_steps=args.warmup_steps,
         num_frozen_encoder_steps=args.num_frozen_encoder_steps,
