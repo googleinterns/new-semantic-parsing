@@ -154,6 +154,8 @@ if __name__ == "__main__":
                     "Binary data version differs from the current version. "
                     "May cause failing and unexpected behavior"
                 )
+            wandb.config.update({"preprocess_" + k: v for k, v in preprocess_args.items()})
+
     except FileNotFoundError:
         preprocess_args = None
 
@@ -270,10 +272,6 @@ if __name__ == "__main__":
         optimizers=optimizer_scheduler,
     )
 
-    wandb.config.update(args)
-    if preprocess_args is not None:
-        wandb.config.update({"preprocess_" + k: v for k, v in preprocess_args.items()})
-
     train_results = trainer.train()
     logger.info(train_results)
 
@@ -314,10 +312,14 @@ if __name__ == "__main__":
         device=trainer.args.device,
     )
 
+    # Finish the script if evaluation texts are not available
+    if preprocess_args is None:
+        exit()
+
     logger.info("Computing inference-time metrics")
 
     data_df = pd.read_table(
-        "data/top-dataset-semantic-parsing-toy/eval.tsv", names=["text", "tokens", "schema"],
+        path_join(preprocess_args["data"], "eval.tsv"), names=["text", "tokens", "schema"],
     )
     targets_str = list(data_df.schema)
 
