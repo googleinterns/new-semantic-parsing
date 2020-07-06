@@ -83,8 +83,8 @@ def make_dataset(filepath, schema_tokenizer: TopSchemaTokenizer):
     data = pd.read_table(filepath, names=["text", "tokens", "schema"])
 
     pairs = [
-        schema_tokenizer.encode_pair(text, schema)
-        for text, schema in tqdm(zip(data.tokens, data.schema))
+        schema_tokenizer.encode_pair(schema, text)
+        for text, schema in tqdm(zip(data.tokens, data.schema), total=len(data.tokens))
     ]
 
     dataset = PointerDataset.from_pair_items(pairs)

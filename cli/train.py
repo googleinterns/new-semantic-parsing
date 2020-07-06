@@ -105,6 +105,7 @@ def parse_args(args=None):
     # misc
     parser.add_argument('--wandb-project', default=None)
     parser.add_argument('--log-every', default=100, type=int)
+    parser.add_argument('--tag', default=None)
 
     # fmt: on
 
@@ -117,6 +118,8 @@ def parse_args(args=None):
     args.decoder_layers = args.decoder_layers or args.layers
     args.decoder_hidden = args.decoder_hidden or args.hidden
     args.decoder_heads = args.decoder_heads or args.heads
+    args.wandb_project = args.wandb_project or "new_semantic_parsing"
+    args.tag = [args.tag] if args.tag else []  # list is required by wandb interface
 
     if args.output_dir is None:
         args.output_dir = os.path.join("output_dir", next(tempfile._get_candidate_names()))
@@ -126,6 +129,8 @@ def parse_args(args=None):
 
 if __name__ == "__main__":
     args = parse_args()
+
+    wandb.init(project=args.wandb_project, config=args, tags=args.tag)
 
     if os.path.exists(args.output_dir):
         raise ValueError(f"output_dir {args.output_dir} already exists")
@@ -248,7 +253,9 @@ if __name__ == "__main__":
         stop_token_ids=[schema_tokenizer.eos_token_id, schema_tokenizer.pad_token_id]
     )
 
-    os.environ["WANDB_PROJECT"] = args.wandb_project or "new_semantic_parsing"
+    # Trainer wandb interface:
+    os.environ["WANDB_PROJECT"] = args.wandb_project
+    os.environ["WANDB_WATCH"] = "all"
 
     # force tensorboard off
     transformers.trainer.is_tensorboard_available = lambda: False
