@@ -60,7 +60,7 @@ def get_optimizers(model, learning_rate, warmup_steps, num_frozen_encoder_steps,
         model.decoder_q_proj.named_parameters(),
     ]
     if model.enc_dec_proj is not None:
-        to_chain.append(model.enc_dec_proj)
+        to_chain.append(model.enc_dec_proj.named_parameters())
 
     decoder_parameters = chain(*to_chain)
 
