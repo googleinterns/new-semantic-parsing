@@ -117,6 +117,7 @@ class PointerModule(LightningModule):
             batch_size=self.batch_size,
             num_workers=8,
             pin_memory=True,
+            shuffle=True,
             collate_fn=self._collator.collate_batch,
         )
         return loader
