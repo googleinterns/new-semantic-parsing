@@ -366,7 +366,12 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         # NOTE: we can use this mask to additionaly guide the model
         # batch size is passed using attention_scores tensor instead of input_ids
         # because while generating, input_ids can be None (using cached encoder_outputs)
-        pointer_mask = self._get_pointer_attention_mask(pointer_mask, attention_scores.shape[0],)
+        pointer_mask = self._get_pointer_attention_mask(
+            pointer_mask,
+            attention_scores.shape[0],
+            dtype=attention_scores.dtype,
+            device=attention_scores.device,
+        )
 
         attention_scores_shape = attention_scores.shape
         attention_scores = attention_scores + pointer_mask

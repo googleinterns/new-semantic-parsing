@@ -25,17 +25,17 @@ class PointerDataset(torch.utils.data.Dataset):
         target_tensors=None,
         source_pointer_masks=None,
         target_pointer_masks=None,
+        fp16=False,
     ):
-        """
-        Stores tensors and makes labels as shifted target_tensors
+        """Stores tensors and makes labels as shifted target_tensors.
 
-        :param source_tensors: list of tensors, input ids
-        :param target_tensors: list of tensors, labels
-        :param source_pointer_masks: list of tensors, mask for the pointer network
-                                     does not allow to point to padding, cls and sep
-        :param target_pointer_masks: list of tensors, mask showing pointer locations in labels
-        :param source_attention_masks: list of tensors, padding mask (0 means padding)
-        :param target_attention_masks: list of tensors, padding mask (0 means padding)
+        Args:
+            source_tensors: list of tensors, input ids
+            target_tensors: list of tensors, labels
+            source_pointer_masks: list of tensors, mask for the pointer network
+                does not allow to point to padding, cls and sep
+            target_pointer_masks: list of tensors, mask showing pointer locations in labels
+            fp16: convert data to 16bit when indexing
         """
         self.source_tensors = source_tensors
         self.target_tensors = target_tensors
@@ -45,6 +45,7 @@ class PointerDataset(torch.utils.data.Dataset):
         if source_tensors is None:
             raise ValueError("source_tensors cannot be None")
 
+        self.fp16 = fp16
         self.torchified = all(
             map(
                 self._check_torchified,
@@ -74,6 +75,8 @@ class PointerDataset(torch.utils.data.Dataset):
         source_pointer_mask = None
         if self.source_pointer_masks is not None:
             source_pointer_mask = self.source_pointer_masks[item]
+            if self.fp16:
+                source_pointer_mask = source_pointer_mask.half()
 
         if self.target_tensors is None:
             return InputDataClass(
@@ -83,6 +86,8 @@ class PointerDataset(torch.utils.data.Dataset):
         target_pointer_mask = None
         if self.target_pointer_masks is not None:
             target_pointer_mask = self.target_pointer_masks[item][:-1]
+            if self.fp16:
+                target_pointer_mask = target_pointer_mask.half()
 
         return InputDataClass(
             input_ids=self.source_tensors[item],

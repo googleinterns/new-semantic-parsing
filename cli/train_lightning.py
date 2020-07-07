@@ -71,6 +71,10 @@ if __name__ == "__main__":
     train_dataset: PointerDataset = datasets["train_dataset"]
     eval_dataset: PointerDataset = datasets["valid_dataset"]
 
+    if args.fp16:
+        train_dataset.fp16 = True
+        eval_dataset.fp16 = True
+
     max_src_len, _ = train_dataset.get_max_len()
 
     try:
@@ -155,6 +159,7 @@ if __name__ == "__main__":
         lr=lr,
         batch_size=args.batch_size,
         warmup_steps=args.warmup_steps,
+        weight_decay=args.weight_decay,
         num_frozen_encoder_steps=args.num_frozen_encoder_steps,
         log_every=args.log_every,
     )

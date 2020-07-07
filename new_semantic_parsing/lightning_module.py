@@ -97,11 +97,11 @@ class PointerModule(LightningModule):
 
     def configure_optimizers(self):
         optimizer, scheduler = get_optimizers(
-            self.model,
-            self.lr,
-            self.warmup_steps,
-            self.num_frozen_encoder_steps,
-            self.weight_decay,
+            model=self.model,
+            learning_rate=self.lr,
+            warmup_steps=self.warmup_steps,
+            num_frozen_encoder_steps=self.num_frozen_encoder_steps,
+            weight_decay=self.weight_decay,
         )
 
         # to call scheduler every step instead of every epoch
