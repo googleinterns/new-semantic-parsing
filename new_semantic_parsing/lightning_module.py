@@ -42,6 +42,7 @@ class PointerModule(LightningModule):
         batch_size=32,
         warmup_steps=0,
         weight_decay=0.0,
+        adam_eps=1e-9,
         num_frozen_encoder_steps=0,
         test_dataset=None,
         log_every=50,
@@ -61,6 +62,7 @@ class PointerModule(LightningModule):
         self.warmup_steps = warmup_steps
         self.weight_decay = weight_decay
         self.num_frozen_encoder_steps = num_frozen_encoder_steps
+        self.adam_eps = adam_eps
         self.log_every = log_every
 
         self._collator = Seq2SeqDataCollator(
@@ -102,6 +104,7 @@ class PointerModule(LightningModule):
             warmup_steps=self.warmup_steps,
             num_frozen_encoder_steps=self.num_frozen_encoder_steps,
             weight_decay=self.weight_decay,
+            adam_eps=self.adam_eps,
         )
 
         # to call scheduler every step instead of every epoch

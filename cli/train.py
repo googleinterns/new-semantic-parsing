@@ -230,6 +230,8 @@ if __name__ == "__main__":
     if args.encoder_lr is not None and args.decoder_lr is not None:
         lr = {"encoder_lr": args.encoder_lr, "decoder_lr": args.decoder_lr}
 
+    adam_eps = 1e-7 if args.fp16 else 1e-9
+
     train_args = transformers.TrainingArguments(
         output_dir=args.output_dir,
         do_train=True,
@@ -247,7 +249,7 @@ if __name__ == "__main__":
         save_steps=1000,
         save_total_limit=1,
         fp16=args.fp16,
-        adam_epsilon=1e-9,
+        adam_epsilon=adam_eps,
         local_rank=-1,
     )
 
@@ -261,6 +263,7 @@ if __name__ == "__main__":
         warmup_steps=args.warmup_steps,
         num_frozen_encoder_steps=args.num_frozen_encoder_steps,
         weight_decay=args.weight_decay,
+        adam_eps=adam_eps,
     )
 
     meter = utils.MetricsMeter(

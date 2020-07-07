@@ -19,7 +19,9 @@ import torch
 from torch.optim.lr_scheduler import LambdaLR
 
 
-def get_optimizers(model, learning_rate, warmup_steps, num_frozen_encoder_steps, weight_decay=0):
+def get_optimizers(
+    model, learning_rate, warmup_steps, num_frozen_encoder_steps, weight_decay=0, adam_eps=1e-9
+):
     """Setups the optimizer and the learning rate scheduler.
 
     Creates optimizer which can update encoder and decoder with different learning rates
@@ -101,7 +103,7 @@ def get_optimizers(model, learning_rate, warmup_steps, num_frozen_encoder_steps,
         ])
     # fmt: on
 
-    optimizer = torch.optim.Adam(optimizer_grouped_parameters, eps=1e-9, betas=(0.9, 0.98))
+    optimizer = torch.optim.Adam(optimizer_grouped_parameters, eps=adam_eps, betas=(0.9, 0.98))
 
     scheduler = get_noam_schedule_with_gradual_unfreezing(
         optimizer,

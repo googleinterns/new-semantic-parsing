@@ -149,6 +149,8 @@ if __name__ == "__main__":
     if args.encoder_lr is not None and args.decoder_lr is not None:
         lr = {"encoder_lr": args.encoder_lr, "decoder_lr": args.decoder_lr}
 
+    adam_eps = 1e-7 if args.fp16 else 1e-9
+
     # /\ /\ copy of the train.py
 
     lightning_module = PointerModule(
@@ -160,6 +162,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         warmup_steps=args.warmup_steps,
         weight_decay=args.weight_decay,
+        adam_eps=adam_eps,
         num_frozen_encoder_steps=args.num_frozen_encoder_steps,
         log_every=args.log_every,
     )
