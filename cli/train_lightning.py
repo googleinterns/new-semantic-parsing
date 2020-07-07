@@ -14,7 +14,8 @@
 # =============================================================================
 """Train the model using preprocessed (binary) data and save the model and tokenizer into a directory.
 
-Uses modified Transformers.Trainer. Probably will be deprecated in favor to train_lightning.py
+Uses Lightning, largely copies train.py.
+The code is not shared for easier modification while supporting backcompatibility with train.py.
 """
 
 import os
@@ -37,8 +38,9 @@ from new_semantic_parsing import (
     EncoderDecoderWPointerModel,
     TopSchemaTokenizer,
 )
-from new_semantic_parsing.data import PointerDataset, Seq2SeqDataCollator
 from new_semantic_parsing import utils, SAVE_FORMAT_VERSION
+from new_semantic_parsing.data import PointerDataset, Seq2SeqDataCollator
+from new_semantic_parsing.callbacks import TransformersModelCheckpoint
 from new_semantic_parsing.lightning_module import PointerModule
 
 from cli.train import parse_args
@@ -174,14 +176,19 @@ if __name__ == "__main__":
 
     wandb_logger.watch(lightning_module, log="all", log_freq=args.log_every)
 
+    # there is a werid bug that checkpoint_callback creates checkpoints
+    # in the filepath subfolder, e.g. if you specify filepath=output_dir
+    # the checkpoints will be created in output_dir/..
     checkpoint_callback = callbacks.ModelCheckpoint(
-        filepath=args.output_dir,
-        save_top_k=True,
-        verbose=False,
+        filepath=path_join(args.output_dir, "pl_checkpoint.ckpt"),
+        save_top_k=2,
+        verbose=True,
         monitor="eval_exact_match",
         mode="max",
         prefix="",
     )
+
+    transformer_checkpoint_callback = TransformersModelCheckpoint(args.output_dir)
 
     early_stopping = False
     if args.early_stopping is not None:
@@ -205,12 +212,10 @@ if __name__ == "__main__":
         gradient_clip_val=args.max_grad_norm,
         precision=16 if args.fp16 else 32,
         row_log_interval=args.log_every,
-        callbacks=[lr_logger],
+        callbacks=[lr_logger, transformer_checkpoint_callback],
     )
 
     trainer.fit(lightning_module)
-
-    lightning_module.state_dict()
 
     # \/ \/ copy of the train.py
 
@@ -236,7 +241,7 @@ if __name__ == "__main__":
 
     # TODO: hardcoded devices, move evaluation logic to PointerModule
     predictions_ids, predictions_str = utils.iterative_prediction(
-        model=model,
+        model=lightning_module.model,
         dataloader=dataloader,
         schema_tokenizer=schema_tokenizer,
         max_len=63,

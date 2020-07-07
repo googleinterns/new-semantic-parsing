@@ -208,7 +208,7 @@ class TopSchemaTokenizer:
         Save schema tokenizer and text tokenizer
         Needs pre-trained encoder model type - this is a workaround for Transformers #4197
         """
-        os.makedirs(path)
+        os.makedirs(path, exist_ok=True)
 
         with open(path_join(path, "schema_vocab.txt"), "w") as f:
             f.write("\n".join(self._vocab))
