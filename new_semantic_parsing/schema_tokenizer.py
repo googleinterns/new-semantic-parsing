@@ -13,6 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Tokenizer analogous to transformers.PreTrainedTokenizer which handles tokenization and numericalization.
+
+Mostly follows PreTrainedTokenizer interface with exceptions of task-specific methods such as
+source text encoding and pair (both source and target texts) encoding.
+Also handles postprocessing generated outputs into TOP format.
+"""
+
 import os
 import json
 from os.path import join as path_join

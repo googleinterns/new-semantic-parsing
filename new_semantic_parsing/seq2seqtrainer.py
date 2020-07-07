@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Will probably be deprecated in nearest future and replaced by lightning_module.
 
-# This file containes a modified version of transformers.Trainer
-# Trainer._prediction_loop is slightly modified to support variable-length output
-# Trainer.get_optimizers is modified to support different lr for encoder and decoder
-# Trainer.train is modified to calculate metrics on train set and to log train metrics more frequently
+This file containes a modified version of transformers.Trainer
+    Trainer._prediction_loop is slightly modified to support variable-length output
+    Trainer.get_optimizers is modified to support different lr for encoder and decoder
+    Trainer.train is modified to calculate metrics on train set and to log train metrics more frequently
+"""
 
-# do not black this file as it mostly repeats tranformers.Trainer
+# do not format this file as it mostly repeats tranformers.Trainer and will be easier to modity this way
 # fmt: off
 import os
 import logging

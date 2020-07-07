@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Transformers Config to store configuration and handle model loading from checkpoint."""
+
+
 from transformers import EncoderDecoderConfig
 
 
 class EncoderDecoderWPointerConfig(EncoderDecoderConfig):
-    """
-    Class to store the configuration of a `EncoderDecoderWPointerModel"
+    """Class to store the configuration of a `EncoderDecoderWPointerModel".
+
+    Transformers use config objects to get the hyperparameters for model loading.
     """
 
     model_type = "encoder_decoder_wpointer"

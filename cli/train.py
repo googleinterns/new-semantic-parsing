@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Train the model using preprocessed (binary) data and save the model and tokenizer into a directory.
+
+Uses modified Transformers.Trainer. Probably will be deprecated in favor to train_lightning.py
+"""
+
 import os
 import sys
 import json

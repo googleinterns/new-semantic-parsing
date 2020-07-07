@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Encoder-decoder with pointer model as in arxiv.org/abs/2001.11458"""
+
 from copy import deepcopy
 
 import torch
@@ -28,22 +30,20 @@ from new_semantic_parsing.loss import LabelSmoothedCrossEntropy
 
 
 class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
-    """
-    Encoder-decoder with pointer model as in arxiv.org/abs/2001.11458
-    """
-
     config_class = EncoderDecoderWPointerConfig
     base_model_prefix = "encoder_decoder_wpointer"
 
     def __init__(
         self, config=None, encoder=None, decoder=None, max_src_len=None, model_args=None, **kwargs,
     ):
-        """
-        :param config:
-        :param encoder: transformers.PreTrainedModel
-        :param decoder: transformers.BertModel, BertFor*Model are not supported
-        :param model_args: argparse arguments, architecture parameters
-        :param max_src_len: maximum length of the encoder sequence, defines the maximum possible pointer index
+        """Initialize the model either from config or from encoder and decoder models.
+
+        Args:
+            config: EncoderDecoderWPointerConfig
+            encoder: transformers.PreTrainedModel
+            decoder: transformers.BertModel, BertFor*Model are not supported
+            model_args: argparse arguments, architecture parameters
+            max_src_len: maximum length of the encoder sequence, defines the maximum possible pointer index
         """
         assert config is not None or (
             encoder is not None and decoder is not None

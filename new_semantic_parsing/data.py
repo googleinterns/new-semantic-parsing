@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Elements of data feeding pipeline - torch Dataset and collator"""
 
 import torch
 

@@ -4,11 +4,11 @@ cd ..
 python cli/preprocess.py \
   --data data/top-dataset-semantic-parsing \
   --text-tokenizer bert-base-cased \
-  --output-dir data-bin/top_jul6 \
+  --output-dir data-bin/top_jul7 \
 
 
-python cli/train.py \
-  --data-dir data-bin/top_jul6 \
+python cli/train_lightning.py \
+  --data-dir data-bin/top_jul7 \
   --encoder-model bert-base-cased \
   --decoder-lr 0.2 \
   --encoder-lr 0.02 \
@@ -22,10 +22,12 @@ python cli/train.py \
   --label-smoothing 0.2 \
   --warmup-steps 1500 \
   --num-frozen-encoder-steps 500 \
-  --output-dir output_dir/jul6_run
+  --log-every 500 \
+  --early-stopping 10 \
+  --output-dir output_dir/jul7_run \
 
 
 python cli/predict.py \
   --data data/top-dataset-semantic-parsing/test.tsv \
-  --model output_dir/jul6_run \
-  --output-file output_dir/jul6_run/test_predictions.tsv \
+  --model output_dir/jul7_run \
+  --output-file output_dir/jul7_run/test_predictions.tsv \

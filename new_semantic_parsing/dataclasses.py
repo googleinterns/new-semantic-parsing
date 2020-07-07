@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Data structures for more clear interfaces across the codebase."""
 
 from typing import NewType, List, Union
 from dataclasses import dataclass

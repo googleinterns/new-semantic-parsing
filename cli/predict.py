@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Make predictions using a trained model and save them into a file.
+
+Optionally, compute metrics if the labels are available.
+"""
+
 import os
 import sys
 import argparse
@@ -105,6 +110,8 @@ if __name__ == "__main__":
     text_tokenizer: transformers.PreTrainedTokenizer = schema_tokenizer.src_tokenizer
 
     logger.info("Loading data")
+
+    # NOTE: this dataset object does not have labels
     dataset: PointerDataset = make_test_dataset(
         args.data, schema_tokenizer, max_len=args.src_max_len
     )

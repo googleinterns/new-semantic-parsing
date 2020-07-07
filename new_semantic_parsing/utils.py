@@ -13,6 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Utilities used across code.
+
+Include fixing random seeds, metrics computation, learning rate selection, model loading, and prediction.
+"""
+
 import random
 import torch
 import numpy as np

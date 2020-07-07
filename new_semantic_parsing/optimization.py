@@ -13,6 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =============================================================================
+"""Utils to get optimizer and scheduler.
+
+Optimizers have different param gropus for encoder and decoder to support
+gradual unfreezing and different learning rates.
+"""
+
 from itertools import chain
 
 import torch
@@ -150,6 +156,8 @@ def get_noam_schedule_with_gradual_unfreezing(
     optimizer, num_warmup_steps, model_size, num_frozen_encoder_steps, last_epoch=1
 ):
     """
+    Creates a Noam (inverse square root) scheduler with linear warmup and encoder gradual unfreezing.
+
     :param optimizer: torch Optimizer where some param groups have 'group_type' key
         if group_type starts with 'encoder_' it will be frozen for `num_frozen_encoder_steps`
     :param num_warmup_steps: number of steps for linear warmup from 0 to optimizer.lr
