@@ -87,7 +87,7 @@ class PointerModule(LightningModule):
         )
 
     def forward(self, *args, **kwargs):
-        """Coinsides with EncoderDecoderWPointerModel.forward"""
+        """Coincides with EncoderDecoderWPointerModel.forward"""
         return self.model.forward(*args, **kwargs)
 
     def training_step(self, batch, batch_idx):
