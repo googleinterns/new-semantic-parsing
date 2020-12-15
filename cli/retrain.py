@@ -487,7 +487,6 @@ def main(args):
         args=args,
         wandb_logger=wandb_logger,
     )
-    model.reset_initial_params()
 
     # override some of the parameters saved in the Trainer
     checkpoint_path = modify_checkpoint_for_retraining(
@@ -519,6 +518,9 @@ def main(args):
         trainer.test(lightning_module, lightning_module.val_dataloader(subset_size=0.01))
 
     cli_utils.check_config(lightning_module, trainer, args, strict=True)
+    # NOTE: trainer.test loads a different checkpoint, we probably need to deal with that
+    model.reset_initial_params()
+
     if model.config.move_norm is not None:
         assert torch.allclose(model.get_move_norm(), torch.zeros(1, device=model.device))
 
