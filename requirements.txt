@@ -1,6 +1,6 @@
 torch==1.5
 transformers==3.0
-tokenizers==0.8
+tokenizers==0.8.0-rc4
 numpy
 pandas
 toml
