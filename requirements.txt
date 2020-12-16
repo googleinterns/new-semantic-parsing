@@ -4,7 +4,7 @@ tokenizers==0.8
 numpy
 pandas
 toml
-wandb==0.9.7
+wandb==0.10.12
 pre-commit
 pytorch-lightning==0.8.5
 tqdm

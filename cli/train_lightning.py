@@ -138,6 +138,8 @@ def parse_args(args=None):
                         help="Lightning-only. Number of gpus to train the model on")
     parser.add_argument("--split-amount-finetune", default=None, type=float,
                         help="Only used for logging, amount of data that was removed from the training set")
+    parser.add_argument("--alert-em", default=0.7, type=float,
+                        help="use wandb alert if the final exact match is below this value")
 
     # fmt: on
 
@@ -383,6 +385,10 @@ def main(args):
         prefix="eval",
         max_len=max_tgt_len,
     )
+
+    final_em = final_metrics["means"]["eval_exact_match"]
+    if final_em < 0.7:
+        wandb.alert(title="low EM", text=f"eval_exact_match {final_em}")
 
     with open(path_join(args.output_dir, "args.toml"), "w") as f:
         args_dict = {
