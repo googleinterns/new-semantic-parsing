@@ -112,7 +112,7 @@ def parse_args(args=None):
     parser.add_argument("--gradient-accumulation-steps", default=1, type=int)
     parser.add_argument("--batch-size", default=64, type=int)
     parser.add_argument("--max-grad-norm", default=1.0, type=float)
-    parser.add_argument("--label-smoothing", default=0.1, type=float)
+    parser.add_argument("--label-smoothing", default=0.0, type=float)
     parser.add_argument("--track-grad-square", default=False, action="store_true",
                         help="Required if you want to tune this model with weight consolidation.")
 
@@ -167,6 +167,9 @@ def parse_args(args=None):
 
     if args.output_dir is None:
         args.output_dir = os.path.join("output_dir", next(tempfile._get_candidate_names()))
+
+    if args.label_smoothing > 0:
+        raise ValueError("Label smoothing is broken or requires significantly different hyperparameters")
 
     return args
 
