@@ -38,7 +38,7 @@ python cli/train_lightning.py \
   --log-every 150 \
   --early-stopping 10 \
   --output-dir $MODEL \
-  --tags train,$TAG \
+  --tags train \
   --new-classes $CLASSES \
   --track-grad-square \
   --seed 1 \
