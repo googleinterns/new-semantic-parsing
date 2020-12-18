@@ -2,7 +2,7 @@ set -e
 cd ..
 
 
-SET_NAME=organizer_95
+SET_NAME=road_95
 DATE=Dec18
 CLASSES=IN:GET_INFO_ROAD_CONDITION
 
@@ -51,7 +51,7 @@ TAG="$SET_NAME"_"$DATE"_ewc_find
 for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
 do
 
-for ewc in 1000000 0 100000 10000 1000
+for ewc in 1000000 0 100000 1000
 do
 
     rm -rf output_dir/finetuned
@@ -138,7 +138,7 @@ TAG="$SET_NAME"_"$DATE"_ewc_find_sample
 for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
 do
 
-for ewc in 1000000 0 100000 10000 1000
+for ewc in 1000000 0 100000 1000
 do
 
     rm -rf output_dir/finetuned
