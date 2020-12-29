@@ -375,6 +375,9 @@ def main(args):
 
     trainer.fit(lightning_module)
 
+    if args.track_grad_square:
+        trainer.model.finalize_grad_squared()
+
     logger.info("Training finished!")
 
     # top_k == 1 --> the last checkpoint is the best model

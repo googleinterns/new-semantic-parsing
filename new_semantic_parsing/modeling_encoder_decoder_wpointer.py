@@ -124,6 +124,14 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         # fine-tuning specific regularizations
         use_ewc = self.config.track_grad_square or self.config.weight_consolidation
 
+        # used to normalize the grad squared in the end of training
+        # .finalize_grad_squared() method impelments this
+        self._is_finalized = True  # used to check that we do not divide by _n_steps when we do not need to
+        self._n_steps = None
+        if self.config.track_grad_square and not self.config.weight_consolidation:
+            self._is_finalized = False
+            self._n_steps = 0
+
         if self.config.weight_consolidation:
             logger.info("Fine-tuning ewc-ready model, setting config.track_grad_square=False")
             self.config.track_grad_square = False
@@ -532,14 +540,16 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         """
         self.grad_squared = ParamsBufferHolder({n: torch.zeros_like(p) for n, p in self.named_parameters()})
 
-    def update_grad_squared(self, batch_size=1):
+    def update_grad_squared(self):
         """
         Updates grad_squared buffer, should be called between .backward() and .zero_grad().
 
         Used to update gradient moving average during training,
         for example in lightning_module.on_after_backward.
 
-            grad_squared = 0.99 * grad_squared + 0.01 * grad^2 / batch_size
+            grad_squared = sum(grad_squared over training steps)
+
+        Notice that we do not need to divide the grad_squared by the batch size, because the loss is already normalized.
 
         This trick allows to efficiently estimate grad norms during training instead of
         forwarding full dataset in the end.
@@ -551,6 +561,7 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
                 "To initialize the model with grad_squared specify track_grad_square=True"
             )
 
+        self._n_steps += 1
         has_grad = False
         for name, param in self.named_parameters():
             if param.grad is None:
@@ -559,14 +570,30 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
 
             # read current squared grad value from the buffer
             _old_grad2 = self.grad_squared[name]
-            _new_grad = 0.99 * _old_grad2 + 0.01 * param.grad ** 2 / batch_size
+            _new_grad2 = _old_grad2 + param.grad ** 2
 
             # write updated value to the buffer
-            self.grad_squared.set(name, _new_grad)
+            self.grad_squared.set(name, _new_grad2)
 
         if not has_grad:
             raise RuntimeError("You should .backward before calling .update_grad_squared. "
                                "All parameters currently have None gradient.")
+
+    def finalize_grad_squared(self):
+        """Divides the accumulated grad_squared by the number of training steps
+
+        Only use this ones right after the training and only use it on models that track trad square
+        """
+        if self._is_finalized:
+            raise RuntimeError("finalize_grad_squared called on a model that does not need finalization. "
+                               "The grad_squared was either normalized already or the model does not need finalization "
+                               "because it does not track grad_squared")
+
+        for name, grad2 in self.grad_squared:
+            normalized_grad2 = grad2 / self._n_steps
+            self.grad_squared.set(name, normalized_grad2)
+
+        self._is_finalized = True
 
     def _get_weight_consolidation(self):
         """Computes Sum(old_grad^2 * (old_params - current_params)^2)"""

@@ -162,7 +162,7 @@ class PointerModule(LightningModule):
     def on_after_backward(self):
         ewc = self.model.config.track_grad_square
         if ewc is not None and ewc > 0:
-            self.model.update_grad_squared(batch_size=self.batch_size)
+            self.model.update_grad_squared()
 
     def configure_optimizers(self):
         optimizer = opt.get_optimizers(
