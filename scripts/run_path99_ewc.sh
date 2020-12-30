@@ -3,7 +3,7 @@ cd ..
 
 
 SET_NAME=path_99
-DATE=Nov18
+DATE=Dec30
 CLASSES=SL:PATH
 
 DATA=data-bin/"$SET_NAME"_"$DATE"
