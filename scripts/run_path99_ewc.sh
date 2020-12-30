@@ -19,6 +19,8 @@ python cli/preprocess.py \
   --split-amount 0.99 \
 
 
+TAG="$SET_NAME"_"$DATE"_bert_run
+
 python cli/train_lightning.py \
   --data-dir $DATA  \
   --encoder-model bert-base-cased \
