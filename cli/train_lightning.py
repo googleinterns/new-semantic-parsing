@@ -113,7 +113,8 @@ def parse_args(args=None):
     parser.add_argument("--batch-size", default=64, type=int)
     parser.add_argument("--max-grad-norm", default=1.0, type=float)
     parser.add_argument("--label-smoothing", default=0.0, type=float)
-    parser.add_argument("--track-grad-square", default=False, action="store_true",
+    # NOTE: set to always true, because of the number of problems previous default value caused
+    parser.add_argument("--track-grad-square", default=True, action="store_true",
                         help="Required if you want to tune this model with weight consolidation.")
 
     # --- freezing

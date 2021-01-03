@@ -40,6 +40,7 @@ python cli/train_lightning.py \
   --output-dir $MODEL \
   --tags train,$TAG \
   --new-classes $CLASSES \
+  --track-grad-square \
   --seed 1 \
 
 
