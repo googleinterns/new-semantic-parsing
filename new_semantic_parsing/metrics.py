@@ -14,6 +14,8 @@
 # =============================================================================
 """Metrics computation."""
 
+import sys
+import logging
 from collections import Counter
 from functools import reduce
 from operator import add
@@ -22,6 +24,18 @@ from typing import List
 
 import torch
 import wandb
+
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+    stream=sys.stdout,
+)
+logger = logging.getLogger(__name__)
+
+file_handler = logging.FileHandler("debug.log")
+file_handler.setLevel(logging.DEBUG)
+logger.addHandler(file_handler)
 
 
 LBR = "["
@@ -191,7 +205,7 @@ class Tree:
 
 
 def get_metrics(
-    pred_tokens, true_tokens, monitor_classes, prefix, schema_tokenizer, do_each=False
+    pred_tokens, true_tokens, monitor_classes, prefix, schema_tokenizer, do_each=False, verbose=False,
 ):
     """Computes exact_match and tree-based metrics
 
@@ -214,11 +228,14 @@ def get_metrics(
             cls/{prefix}_{monitor_classes[i]}_{score_name}; if do_each=False then only i == 0, else for each class
         for each score_name - key from get_tree_path_scores output dictionary
     """
+    if verbose:
+        logger.info(f"Gettting metrics for classes {monitor_classes}")
+
     exact_match = sum(int(str(p) == str(l)) for p, l in zip(pred_tokens, true_tokens))
     exact_match /= len(true_tokens)
 
     tree_metrics = get_tree_path_metrics(
-        pred_tokens, true_tokens, monitor_classes, prefix, do_each
+        pred_tokens, true_tokens, monitor_classes, prefix, do_each, verbose=verbose,
     )
 
     pred_strs = [schema_tokenizer.detokenize(p) for p in pred_tokens]
@@ -238,7 +255,7 @@ def get_metrics(
 # Tree path scores
 
 
-def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_each=False):
+def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_each=False, verbose=False):
     """Gets metrics for all classes, for monitor classes and for monitor_classes[0].
 
     Apply prefix to all keys.
@@ -259,10 +276,17 @@ def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_
         for each score_name - key from get_tree_path_scores output dictionary
     """
 
-    tree_path_scores = get_tree_path_scores(pred_tokens=pred_tokens, true_tokens=true_tokens)
+    tree_path_scores = get_tree_path_scores(pred_tokens=pred_tokens, true_tokens=true_tokens, verbose=verbose)
     tree_path_scores = {f"{prefix}_{k}": v for k, v in tree_path_scores.items()}
 
+    if verbose:
+        logger.info("Finished computing tree path scores overall. Starting to compute per-class scores.")
+
     if monitor_classes is not None:
+
+        if verbose:
+            logger.info(f"Computing scores for classes {monitor_classes}")
+
         _new_classes_scores = get_tree_path_scores(
             pred_tokens=pred_tokens, true_tokens=true_tokens, classes=monitor_classes
         )
@@ -272,6 +296,9 @@ def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_
         tree_path_scores.update(_new_classes_scores)
 
         for i, class_ in enumerate(monitor_classes):
+            if verbose:
+                logger.debug(f"Computing scores for the class {class_}")
+
             if i > 0 and not do_each:
                 break
 
@@ -284,7 +311,7 @@ def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_
     return tree_path_scores
 
 
-def get_tree_path_scores(pred_tokens, true_tokens, classes=None):
+def get_tree_path_scores(pred_tokens, true_tokens, classes=None, verbose=False):
     """
     Args:
         pred_tokens: list of lists of tokens
@@ -301,6 +328,10 @@ def get_tree_path_scores(pred_tokens, true_tokens, classes=None):
     pred_paths_lst, true_paths_lst = [], []
 
     for pred, true in zip(pred_tokens, true_tokens):
+        if verbose:
+            logger.debug(f"(get_tree_path_scores) Predicted: {pred}")
+            logger.debug(f"(get_tree_path_scores) Expected:  {true}")
+
         try:
             pred_paths = _get_paths_with_values(Tree.from_tokens(pred))
         except ValueError:

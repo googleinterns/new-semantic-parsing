@@ -29,6 +29,7 @@ from cli.retrain import logger
 
 from new_semantic_parsing import config
 
+
 def evaluate_model(
     checkpoint_path,
     schema_tokenizer: nsp.TopSchemaTokenizer,
@@ -84,6 +85,9 @@ def evaluate_model(
 
     all_final_metrics = []
     folds = _get_kfold_subsets(pred_tokens, true_tokens, n_rounds)
+
+    del lightning_module  # trying to solve a stalling issue
+
     for predictions_subset, labels_subset in tqdm(folds, desc="Computing metrics"):
         _final_metrics = nsp.metrics.get_metrics(
             predictions_subset,
@@ -92,6 +96,7 @@ def evaluate_model(
             prefix=prefix,
             schema_tokenizer=schema_tokenizer,
             do_each=True,
+            verbose=True,
         )
         all_final_metrics.append(_final_metrics)
 
