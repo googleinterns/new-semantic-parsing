@@ -380,7 +380,7 @@ def main(args):
         model.finalize_grad_squared()
         # trainer.model is the PointerModule
         # trainer.model.model is the EncoderDecoderWPointerModel
-        assert trainer.model.model.is_finalized
+        assert trainer.model.model._is_finalized
 
     logger.info("Training finished!")
 

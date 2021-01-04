@@ -589,7 +589,7 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
                                "The grad_squared was either normalized already or the model does not need finalization "
                                "because it does not track grad_squared")
 
-        for name, grad2 in self.grad_squared:
+        for name, grad2 in self.grad_squared.items():
             normalized_grad2 = grad2 / self._n_steps
             self.grad_squared.set(name, normalized_grad2)
 
