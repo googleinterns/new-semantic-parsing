@@ -377,7 +377,10 @@ def main(args):
     trainer.fit(lightning_module)
 
     if args.track_grad_square:
-        trainer.model.finalize_grad_squared()
+        model.finalize_grad_squared()
+        # trainer.model is the PointerModule
+        # trainer.model.model is the EncoderDecoderWPointerModel
+        assert trainer.model.model.is_finalized
 
     logger.info("Training finished!")
 
