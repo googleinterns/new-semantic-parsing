@@ -33,7 +33,7 @@ from new_semantic_parsing import config
 def evaluate_model(
     checkpoint_path,
     schema_tokenizer: nsp.TopSchemaTokenizer,
-    eval_dataset,
+    eval_dataloader,
     prefix,
     max_len,
     n_rounds=5,
@@ -48,7 +48,7 @@ def evaluate_model(
     Args:
         checkpoint_path: str, path to the pytorch lightning checkpoint
         schema_tokenizer: TopSchemaTokenizer
-        eval_dataset: PointerDataset to evaluate on
+        eval_dataloader: torch Dataloader to evaluate on
         prefix: str, prefix for all metrics
         n_rounds: int, number of times to evaluate on eval_dataset subset
         subset_size: float, size of the subset for every round
@@ -63,17 +63,9 @@ def evaluate_model(
     model = nsp.EncoderDecoderWPointerModel.from_pretrained(best_model_dir)
     model.eval()
 
-    lightning_module = nsp.PointerModule.load_from_checkpoint(
-        checkpoint_path,
-        model=model,
-        schema_tokenizer=schema_tokenizer,
-        train_dataset=None,
-        valid_dataset=eval_dataset,
-    )
-
     _, pred_tokens = iterative_prediction(
-        lightning_module.model,
-        lightning_module.val_dataloader(),
+        model,
+        eval_dataloader,
         schema_tokenizer,
         max_len=max_len,
         num_beams=num_beams,
@@ -81,12 +73,10 @@ def evaluate_model(
         return_tokens=True,
     )
 
-    true_tokens = _get_true_tokens_from_dataset(lightning_module.valid_dataset, schema_tokenizer)
+    true_tokens = _get_true_tokens_from_dataset(eval_dataloader.dataset, schema_tokenizer)
 
     all_final_metrics = []
     folds = _get_kfold_subsets(pred_tokens, true_tokens, n_rounds)
-
-    del lightning_module  # trying to solve a stalling issue
 
     for predictions_subset, labels_subset in tqdm(folds, desc="Computing metrics"):
         _final_metrics = nsp.metrics.get_metrics(

@@ -229,7 +229,7 @@ def get_metrics(
         for each score_name - key from get_tree_path_scores output dictionary
     """
     if verbose:
-        logger.info(f"Gettting metrics for classes {monitor_classes}")
+        logger.info(f"Getting metrics for classes {monitor_classes}")
 
     exact_match = sum(int(str(p) == str(l)) for p, l in zip(pred_tokens, true_tokens))
     exact_match /= len(true_tokens)
@@ -276,6 +276,9 @@ def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_
         for each score_name - key from get_tree_path_scores output dictionary
     """
 
+    if verbose:
+        logger.info("Computing tree path scores.")
+
     tree_path_scores = get_tree_path_scores(pred_tokens=pred_tokens, true_tokens=true_tokens, verbose=verbose)
     tree_path_scores = {f"{prefix}_{k}": v for k, v in tree_path_scores.items()}
 
@@ -297,7 +300,7 @@ def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_
 
         for i, class_ in enumerate(monitor_classes):
             if verbose:
-                logger.debug(f"Computing scores for the class {class_}")
+                logger.info(f"Computing scores for the class {class_}")
 
             if i > 0 and not do_each:
                 break
@@ -325,12 +328,15 @@ def get_tree_path_scores(pred_tokens, true_tokens, classes=None, verbose=False):
             tree_path_recall
             tree_path_f1
     """
+    if verbose:
+        logger.info("Computing tree path scores")
+
     pred_paths_lst, true_paths_lst = [], []
 
     for pred, true in zip(pred_tokens, true_tokens):
         if verbose:
-            logger.debug(f"(get_tree_path_scores) Predicted: {pred}")
-            logger.debug(f"(get_tree_path_scores) Expected:  {true}")
+            logger.info(f"(get_tree_path_scores) Predicted: {pred}")
+            logger.info(f"(get_tree_path_scores) Expected:  {true}")
 
         try:
             pred_paths = _get_paths_with_values(Tree.from_tokens(pred))

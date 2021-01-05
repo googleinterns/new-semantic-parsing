@@ -388,22 +388,28 @@ def main(args):
     assert trainer.checkpoint_callback.save_top_k == 1
     logger.info(f"Loading and evaluating the best model")
 
+    last_checkpoint_path = trainer.checkpoint_callback.last_checkpoint_path
+    del trainer
+
+    eval_dataloader = nsp.data.make_dataloader(eval_dataset, args.batch_size, schema_tokenizer.pad_token_id)
     final_metrics, description = cli_utils.evaluate_model(
-        trainer.checkpoint_callback.last_checkpoint_path,
+        last_checkpoint_path,
         schema_tokenizer,
-        eval_dataset,
+        eval_dataloader,
         prefix="eval",
         max_len=max_tgt_len,
     )
+    logger.info("Finished evaluation")
 
     final_em = final_metrics["means"]["eval_exact_match"]
     if final_em < 0.7:
         wandb.alert(title="low EM", text=f"eval_exact_match {final_em}")
 
     with open(path_join(args.output_dir, "args.toml"), "w") as f:
+        logger.info("Saving the metrics to the args.toml file")
         args_dict = {
             "version": nsp.SAVE_FORMAT_VERSION,
-            "pl_checkpoint_path": trainer.checkpoint_callback.last_checkpoint_path,
+            "pl_checkpoint_path": last_checkpoint_path,
             "metrics": final_metrics,
             "max_src_len": max_src_len,
             "max_tgt_len": max_tgt_len,
@@ -411,9 +417,8 @@ def main(args):
         }
         toml.dump(args_dict, f)
 
-    logger.info(description)
     wandb_logger.log_metrics({**final_metrics["means"], **final_metrics["stdevs"]})
-    wandb_logger.close()
+    logger.info("Finished")
 
 
 if __name__ == "__main__":

@@ -538,10 +538,11 @@ def main(args):
     if args.average_checkpoints:
         average_checkpoints(model, args, save_to=os.path.dirname(best_model_checkpoint))
 
+    eval_dataloader = nsp.data.make_dataloader(eval_dataset, args.batch_size, schema_tokenizer.pad_token_id)
     final_metrics, description = cli_utils.evaluate_model(
         best_model_checkpoint,
         schema_tokenizer,
-        eval_dataset,
+        eval_dataloader,
         prefix="eval",
         max_len=train_args.get("max_tgt_len", 68),  # 68 is max_tgt_len for TOP
     )
