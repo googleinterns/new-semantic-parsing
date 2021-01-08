@@ -1,4 +1,4 @@
-torch==1.7
+torch==1.7.1
 transformers==3.0.2
 numpy
 pandas

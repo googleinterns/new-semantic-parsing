@@ -86,7 +86,7 @@ def evaluate_model(
             prefix=prefix,
             schema_tokenizer=schema_tokenizer,
             do_each=True,
-            verbose=True,
+            verbose=False,
         )
         all_final_metrics.append(_final_metrics)
 
