@@ -21,7 +21,7 @@ SPLIT=0.95
 #  --split-amount $SPLIT \
 
 
-python cli/train_lightning.py \
+python cli/train.py \
   --data-dir $DATA  \
   --encoder-model bert-base-cased \
   --decoder-lr 0.2 \

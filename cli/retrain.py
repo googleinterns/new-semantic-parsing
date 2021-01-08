@@ -14,7 +14,7 @@
 # =============================================================================
 """Finetune a trained model on a dataset.
 
-Similar to train_lightning.py, but loads the model and trainer from checkpoint
+Similar to train.py, but loads the model and trainer from checkpoint
 and uses finetune_set instead of train_set from the data.pkl
 """
 

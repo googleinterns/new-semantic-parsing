@@ -15,8 +15,6 @@
 """Make predictions using a trained model and save them into a file.
 
 Optionally, compute metrics if the labels are available.
-Only works with transformers.PreTrainedModel saved format. Lightning is not yet supported,
-but train_lightning.py also saves transformers format along with lightning checkpoints.
 """
 
 import os

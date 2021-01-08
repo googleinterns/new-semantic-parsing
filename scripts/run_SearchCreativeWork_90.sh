@@ -37,7 +37,7 @@ python cli/preprocess.py \
   --split-amount 0.90 \
 
 
-python cli/train_lightning.py \
+python cli/train.py \
   --data-dir $DATA  \
   --encoder-model bert-base-cased \
   --decoder-lr 0.2 \
@@ -109,7 +109,7 @@ do
 
   rm -rf "$MODEL"_seed
 
-  python cli/train_lightning.py \
+  python cli/train.py \
     --data-dir $DATA  \
     --encoder-model bert-base-cased \
     --decoder-lr 0.2 \

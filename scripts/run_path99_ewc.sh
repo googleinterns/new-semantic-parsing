@@ -21,7 +21,7 @@ python cli/preprocess.py \
 
 TAG="$SET_NAME"_"$DATE"_bert_run
 
-python cli/train_lightning.py \
+python cli/lightning.py \
   --data-dir $DATA  \
   --encoder-model bert-base-cased \
   --decoder-lr 0.2 \
