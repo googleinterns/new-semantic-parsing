@@ -136,7 +136,7 @@ class PointerModule(LightningModule):
             pred_tokens, true_tokens, self.monitor_classes, "train_batch"
         )
 
-        if self.model.config.move_norm is not None:
+        if self.model.initial_params is not None:
             batch_metrics["move_norm"] = self.model.get_move_norm()
 
         log_dict = {"loss": loss, **batch_metrics, **tree_metrics}
