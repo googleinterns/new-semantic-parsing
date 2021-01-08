@@ -3,7 +3,7 @@ cd ..
 
 
 SET_NAME=path_99
-DATE=Jan3
+DATE=Jan8
 CLASSES=SL:PATH
 
 DATA=data-bin/"$SET_NAME"_"$DATE"
@@ -51,7 +51,7 @@ TAG="$SET_NAME"_"$DATE"_bert_run_ewc_find
 for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
 do
 
-for ewc in 1000000 0 100000 50000 10000 5000 1000
+for ewc in 0 0.1 10
 do
 
     rm -rf output_dir/finetuned

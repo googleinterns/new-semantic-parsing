@@ -13,10 +13,11 @@
 # limitations under the License.
 # =============================================================================
 
-SAVE_FORMAT_VERSION = "0.6-nightly-Aug12"
+SAVE_FORMAT_VERSION = "0.7-nightly-Jan8"
 
 from .configuration_encoder_decoder_wpointer import EncoderDecoderWPointerConfig
 from .data import PointerDataset
 from .lightning_module import PointerModule
 from .modeling_encoder_decoder_wpointer import EncoderDecoderWPointerModel
 from .schema_tokenizer import TopSchemaTokenizer
+from .trainer import Trainer

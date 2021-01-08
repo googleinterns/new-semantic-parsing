@@ -21,6 +21,8 @@ class ParamsBufferHolder(nn.Module):
     """
     Stores named_params copies **as buffers** in a convenient way.
 
+    Buffers behave just like the model parameters, but they are not updated during optimizer.step().
+
     Args:
         named_params: an iterator returning (name, tensor) or an equivalent dict
         buffer_name_prefix: prefix for the buffer name in .register_buffer

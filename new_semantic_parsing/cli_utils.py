@@ -13,14 +13,10 @@
 # limitations under the License.
 # =============================================================================
 """Utils only used in cli scripts"""
-
-import os
-
 import toml
 import torch
 
 import numpy as np
-from tqdm.auto import tqdm
 
 import new_semantic_parsing as nsp
 import new_semantic_parsing.metrics
@@ -30,8 +26,8 @@ from cli.retrain import logger
 from new_semantic_parsing import config
 
 
-def evaluate_model(
-    checkpoint_path,
+def evaluate_model_n_rounds(
+    model: nsp.EncoderDecoderWPointerModel,
     schema_tokenizer: nsp.TopSchemaTokenizer,
     eval_dataloader,
     prefix,
@@ -59,8 +55,6 @@ def evaluate_model(
             description is a string describing main metircs
     """
 
-    best_model_dir = os.path.dirname(checkpoint_path)
-    model = nsp.EncoderDecoderWPointerModel.from_pretrained(best_model_dir)
     model.eval()
 
     _, pred_tokens = iterative_prediction(
@@ -78,7 +72,8 @@ def evaluate_model(
     all_final_metrics = []
     folds = _get_kfold_subsets(pred_tokens, true_tokens, n_rounds)
 
-    for predictions_subset, labels_subset in tqdm(folds, desc="Computing metrics"):
+    for fold, (predictions_subset, labels_subset) in enumerate(folds):
+        logger.info("Computing metrics for the fold {fold}")
         _final_metrics = nsp.metrics.get_metrics(
             predictions_subset,
             labels_subset,
@@ -180,7 +175,7 @@ def check_config(pointer_module, trainer, args, strict=False):
     if args.label_smoothing is not None:
         assert _cfg.label_smoothing == args.label_smoothing
 
-    if args.weight_decay is not None and (trainer.optimizers is not None or strict):
+    if args.weight_decay is not None and (trainer.optimizer is not None or strict):
         for param_group in trainer.optimizers[0].param_groups:
             if not param_group["use_weight_decay"]:
                 continue
@@ -211,7 +206,9 @@ def iterative_prediction(
     text_tokenizer = schema_tokenizer.src_tokenizer
 
     assert dataloader.num_workers == config.NUM_WORKERS
-    for batch in tqdm(dataloader, desc="generation"):
+
+    logger.info("Generating predictions sequentially")
+    for batch in dataloader:
         prediction_batch: torch.LongTensor = model.generate(
             input_ids=batch["input_ids"].to(device),
             pointer_mask=batch["pointer_mask"].to(device),
@@ -417,3 +414,29 @@ def average_models(
 
     new_model.load_state_dict(new_named_params, strict=True)
     return new_model
+
+
+def make_lightning_module(
+    model, schema_tokenizer, train_dataset, eval_dataset, max_tgt_len, args,
+):
+    freezing_schedule = nsp.dataclasses.EncDecFreezingSchedule.from_args(args)
+
+    no_lr_scheduler = getattr(args, "no_lr_scheduler", False)
+
+    lightning_module = nsp.PointerModule(
+        model=model,
+        schema_tokenizer=schema_tokenizer,
+        train_dataset=train_dataset,
+        valid_dataset=eval_dataset,
+        lr=args.lr,
+        batch_size=args.batch_size,
+        warmup_steps=args.warmup_steps,
+        weight_decay=args.weight_decay,
+        log_every=args.log_every,
+        monitor_classes=args.new_classes,
+        freezing_schedule=freezing_schedule,
+        max_tgt_len=max_tgt_len,
+        no_lr_scheduler=no_lr_scheduler,
+    )
+
+    return lightning_module

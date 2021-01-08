@@ -111,6 +111,21 @@ def get_optimizers(model, learning_rate, weight_decay=0, adam_eps=1e-9):
     return optimizer
 
 
+class NoamSchedulePolicy:
+    def __init__(self, num_warmup_steps, model_size):
+        self.num_warmup_steps = num_warmup_steps
+        self.model_size = model_size
+
+    def __call__(self, current_step):
+        current_step = max(current_step, 1)
+        _num_warmup_steps = max(self.num_warmup_steps, 1)
+
+        scale = self.model_size ** -0.5 * min(
+            current_step ** (-0.5), current_step * _num_warmup_steps ** (-1.5)
+        )
+        return scale
+
+
 def get_noam_schedule(optimizer, num_warmup_steps, model_size, last_epoch=1):
     """Creates a Noam (inverse square root) scheduler with linear warmup and encoder gradual unfreezing.
 
@@ -122,17 +137,8 @@ def get_noam_schedule(optimizer, num_warmup_steps, model_size, last_epoch=1):
 
     :return: LambdaLR scheduler
     """
-
-    def lr_lambda(current_step):
-        current_step = max(current_step, 1)
-        _num_warmup_steps = max(num_warmup_steps, 1)
-
-        scale = model_size ** -0.5 * min(
-            current_step ** (-0.5), current_step * _num_warmup_steps ** (-1.5)
-        )
-        return scale
-
-    return LambdaLR(optimizer, lr_lambda, last_epoch)
+    policy = NoamSchedulePolicy(num_warmup_steps, model_size)
+    return LambdaLR(optimizer, policy, last_epoch)
 
 
 def set_encoder_requires_grad(param_groups, value: bool):

@@ -26,10 +26,8 @@ import toml
 import torch
 import transformers
 import wandb
-import pytorch_lightning as pl
 
 import new_semantic_parsing as nsp
-import new_semantic_parsing.callbacks
 import new_semantic_parsing.dataclasses
 
 from new_semantic_parsing import utils, cli_utils
@@ -43,8 +41,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(os.path.basename(__file__))
 logging.getLogger("transformers.configuration_utils").setLevel(logging.WARNING)
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+logging.getLogger("wandb.sdk.internal.internal").setLevel(logging.WARNING)
 
 
 def parse_args(args=None):
@@ -133,10 +130,12 @@ def parse_args(args=None):
 
     # misc
     parser.add_argument("--wandb-project", default=None)
+    parser.add_argument("--disable-wandb", default=False, action="store_true",
+                        help="do not use wandb, mainly used for testing")
     parser.add_argument("--log-every", default=100, type=int)
     parser.add_argument("--tags", default=None)
-    parser.add_argument("--gpus", default=None, type=int,
-                        help="Lightning-only. Number of gpus to train the model on")
+    parser.add_argument("--device", default=None, type=int,
+                        help="Device to train the model on, cuda if available by default")
     parser.add_argument("--split-amount-finetune", default=None, type=float,
                         help="Only used for logging, amount of data that was removed from the training set")
     parser.add_argument("--alert-em", default=0.7, type=float,
@@ -163,8 +162,8 @@ def parse_args(args=None):
     if args.split_amount_finetune is not None:
         args.split_amount_train = 1.0 - args.split_amount_finetune
 
-    if args.gpus is None:
-        args.gpus = 1 if torch.cuda.is_available() else 0
+    if args.device is None:
+        args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if args.output_dir is None:
         args.output_dir = os.path.join("output_dir", next(tempfile._get_candidate_names()))
@@ -249,93 +248,12 @@ def make_model(schema_tokenizer, max_src_len, args, preprocess_args=None):
     return model
 
 
-def make_lightning_module(
-    model, schema_tokenizer, train_dataset, eval_dataset, max_tgt_len, args, wandb_logger
-):
-    wandb_logger.log_hyperparams({"new_classes": " ".join(args.new_classes)})
-
-    freezing_schedule = nsp.dataclasses.EncDecFreezingSchedule.from_args(args)
-
-    # only used in retrain_simple.py
-    no_lr_scheduler = getattr(args, "no_lr_scheduler", False)
-
-    lightning_module = nsp.PointerModule(
-        model=model,
-        schema_tokenizer=schema_tokenizer,
-        train_dataset=train_dataset,
-        valid_dataset=eval_dataset,
-        lr=args.lr,
-        batch_size=args.batch_size,
-        warmup_steps=args.warmup_steps,
-        weight_decay=args.weight_decay,
-        log_every=args.log_every,
-        monitor_classes=args.new_classes,
-        freezing_schedule=freezing_schedule,
-        max_tgt_len=max_tgt_len,
-        no_lr_scheduler=no_lr_scheduler,
-    )
-
-    wandb_logger.watch(lightning_module, log="all", log_freq=args.log_every)
-    return lightning_module
-
-
-def make_trainer(args, wandb_logger):
-    """Make lightning Trainer with callbacks for checkpointing, early stopping and lr logging.
-
-    Args:
-        args: argparse object from parse_args()
-        wandb_logger: lightning WandbLogger object
-    """
-    # there is a werid bug that checkpoint_callback creates checkpoints
-    # in the filepath subfolder, e.g. if you specify filepath=output_dir
-    # the checkpoints will be created in output_dir/..
-    # NOTE: we need save_top_k=1 fot checkpoint_callback.last_checkpoint_path
-    # to point to the best model
-
-    checkpoint_callback = nsp.callbacks.TransformersModelCheckpoint(
-        filepath=path_join(args.output_dir, "pl_checkpoint.ckpt"),
-        save_top_k=1,
-        verbose=False,
-        monitor="eval_exact_match",
-        mode="max",
-        prefix="",
-    )
-
-    early_stopping = False
-    if args.early_stopping is not None:
-        early_stopping = pl.callbacks.EarlyStopping(
-            monitor="eval_exact_match",
-            patience=args.early_stopping,
-            strict=False,
-            verbose=False,
-            mode="max",
-        )
-
-    lr_logger = pl.callbacks.LearningRateLogger()
-
-    trainer = pl.Trainer(
-        logger=wandb_logger,
-        max_epochs=args.epochs,
-        min_epochs=args.min_epochs,
-        max_steps=args.max_steps,
-        min_steps=args.min_steps,
-        gpus=args.gpus,
-        accumulate_grad_batches=args.gradient_accumulation_steps,
-        checkpoint_callback=checkpoint_callback,
-        early_stop_callback=early_stopping,
-        gradient_clip_val=args.max_grad_norm,
-        row_log_interval=1,
-        limit_val_batches=args.eval_data_amount,
-        callbacks=[lr_logger],
-    )
-    return trainer
-
-
 def main(args):
     utils.set_seed(args.seed)
 
-    wandb_logger = pl.loggers.WandbLogger(project=args.wandb_project, tags=args.tags)
-    wandb_logger.log_hyperparams(args)
+    mode = "disabled" if args.disable_wandb else None
+    wandb.init(project=args.wandb_project, tags=args.tags, config=args, mode=mode)
+    wandb.config.update({"new_classes": " ".join(args.new_classes)}, allow_val_change=True)
 
     logger.info(f"Starting training with args: \n{pprint.pformat(vars(args))}")
 
@@ -350,7 +268,7 @@ def main(args):
     train_dataset: nsp.PointerDataset = datasets["train_dataset"]
     eval_dataset: nsp.PointerDataset = datasets["valid_dataset"]
 
-    wandb_logger.log_hyperparams({"num_data": len(train_dataset)})
+    wandb.config.update({"num_data": len(train_dataset)})
 
     max_src_len, max_tgt_len = train_dataset.get_max_len()
 
@@ -366,10 +284,39 @@ def main(args):
 
     logger.info("Preparing for training")
 
-    lightning_module = make_lightning_module(
-        model, schema_tokenizer, train_dataset, eval_dataset, max_tgt_len, args, wandb_logger
+    freezing_schedule = nsp.dataclasses.EncDecFreezingSchedule.from_args(args)
+    # NOTE: this is not a lightning module object, but it follows its interface
+    lightning_module = nsp.PointerModule(
+        model=model,
+        schema_tokenizer=schema_tokenizer,
+        train_dataset=train_dataset,
+        valid_dataset=eval_dataset,
+        lr=args.lr,
+        batch_size=args.batch_size,
+        warmup_steps=args.warmup_steps,
+        weight_decay=args.weight_decay,
+        log_every=args.log_every,
+        monitor_classes=args.new_classes,
+        freezing_schedule=freezing_schedule,
+        max_tgt_len=max_tgt_len,
+        no_lr_scheduler=getattr(args, "no_lr_scheduler", False),
     )
-    trainer = make_trainer(args, wandb_logger)
+
+    wandb.watch(lightning_module, log="all", log_freq=args.log_every)
+
+    trainer = nsp.Trainer(
+        max_epochs=args.epochs,
+        min_epochs=args.min_epochs,
+        max_steps=args.max_steps,
+        min_steps=args.min_steps,
+        device=args.device,
+        gradient_clip_val=args.max_grad_norm,
+        early_stopping_metric="eval_exact_match",
+        patience=args.early_stopping,
+        maximize_early_stopping_metric=True,
+        limit_val_batches=args.eval_data_amount,
+        save_dir=args.output_dir,
+    )
 
     # --- FIT
     cli_utils.check_config(lightning_module, trainer, args)
@@ -377,25 +324,18 @@ def main(args):
     trainer.fit(lightning_module)
 
     if args.track_grad_square:
-        model.finalize_grad_squared()
+        trainer.model.model.finalize_grad_squared()
         # trainer.model is the PointerModule
         # trainer.model.model is the EncoderDecoderWPointerModel
         assert trainer.model.model._is_finalized
 
     logger.info("Training finished!")
 
-    # top_k == 1 --> the last checkpoint is the best model
-    assert trainer.checkpoint_callback.save_top_k == 1
-    logger.info(f"Loading and evaluating the best model")
-
-    last_checkpoint_path = trainer.checkpoint_callback.last_checkpoint_path
-    del trainer
-
-    eval_dataloader = nsp.data.make_dataloader(eval_dataset, args.batch_size, schema_tokenizer.pad_token_id)
-    final_metrics, description = cli_utils.evaluate_model(
-        last_checkpoint_path,
+    logger.info(f"Evaluating the best model")
+    final_metrics, description = cli_utils.evaluate_model_n_rounds(
+        trainer.model.model,
         schema_tokenizer,
-        eval_dataloader,
+        trainer.valid_dataloader,
         prefix="eval",
         max_len=max_tgt_len,
     )
@@ -409,7 +349,6 @@ def main(args):
         logger.info("Saving the metrics to the args.toml file")
         args_dict = {
             "version": nsp.SAVE_FORMAT_VERSION,
-            "pl_checkpoint_path": last_checkpoint_path,
             "metrics": final_metrics,
             "max_src_len": max_src_len,
             "max_tgt_len": max_tgt_len,
@@ -417,7 +356,7 @@ def main(args):
         }
         toml.dump(args_dict, f)
 
-    wandb_logger.log_metrics({**final_metrics["means"], **final_metrics["stdevs"]})
+    wandb.log({**final_metrics["means"], **final_metrics["stdevs"]})
     logger.info("Finished")
 
 

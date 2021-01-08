@@ -17,9 +17,9 @@
 from typing import Union, Dict
 
 import torch
+import torch.nn as nn
 
 from torch.utils.data import DataLoader
-from pytorch_lightning import LightningModule
 
 import new_semantic_parsing.optimization as opt
 from new_semantic_parsing import metrics, data, config
@@ -29,7 +29,7 @@ from new_semantic_parsing.schema_tokenizer import TopSchemaTokenizer
 from new_semantic_parsing.utils import make_subset
 
 
-class PointerModule(LightningModule):
+class PointerModule(nn.Module):
     """Handles training.
 
     Creates optimizers and implements training loop with multi-GPU and TPU support.
@@ -79,6 +79,10 @@ class PointerModule(LightningModule):
         self.test_dataset = test_dataset
 
         self.lr = lr
+
+        if batch_size is None:
+            raise ValueError("batch_size cannot be None")
+
         self.batch_size = batch_size
         self.warmup_steps = warmup_steps
         self.weight_decay = weight_decay
@@ -87,20 +91,28 @@ class PointerModule(LightningModule):
         self.freezing_schedule = freezing_schedule
         self.max_tgt_len = max_tgt_len
         self.no_lr_scheduler = no_lr_scheduler
+        self.global_step = None  # updated in the Trainer
 
         self._collator = data.Seq2SeqDataCollator(
             pad_id=self.text_tokenizer.pad_token_id,
             decoder_pad_id=self.schema_tokenizer.pad_token_id,
         )
 
-        # required for ability to load the checkpoint
-        self.save_hyperparameters()
+    @property
+    def device(self):
+        return self.model.get_input_embeddings().weight.device
+
+    @property
+    def dtype(self):
+        return self.model.get_input_embeddings().weight.dtype
 
     def forward(self, *args, **kwargs):
         """Coinsides with EncoderDecoderWPointerModel.forward"""
         return self.model.forward(*args, **kwargs)
 
     def training_step(self, batch, batch_idx):
+        self.global_step = 0 if self.global_step is None else self.global_step + 1
+
         outputs = self(**batch)
         loss = outputs[0]
 

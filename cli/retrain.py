@@ -25,19 +25,16 @@ import pprint
 import logging
 import argparse
 import tempfile
-import contextlib
 from os.path import join as path_join
 
 import toml
 import torch
-import pytorch_lightning as pl
-import pytorch_lightning.loggers
+import wandb
 
 import new_semantic_parsing as nsp
-import new_semantic_parsing.callbacks
 import new_semantic_parsing.dataclasses
 
-from new_semantic_parsing import utils, cli_utils, optimization
+from new_semantic_parsing import utils, cli_utils
 
 
 logging.basicConfig(
@@ -48,8 +45,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(os.path.basename(__file__))
 logging.getLogger("transformers.configuration_utils").setLevel(logging.WARNING)
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+logging.getLogger("wandb.sdk.internal.internal").setLevel(logging.WARNING)
 
 
 def parse_args(args=None):
@@ -141,10 +137,12 @@ def parse_args(args=None):
 
     # misc
     parser.add_argument("--wandb-project", default=None)
-    parser.add_argument("--log-every", default=None, type=int)
+    parser.add_argument("--disable-wandb", default=False, action="store_true",
+                        help="do not use wandb, mainly used for testing")
+    parser.add_argument("--log-every", default=100, type=int)
     parser.add_argument("--tags", default=None)
-    parser.add_argument("--gpus", default=None, type=int,
-                        help="Number of gpus to train the model on")
+    parser.add_argument("--device", default=None, type=int,
+                        help="Device to train the model on, cuda if available by default")
     parser.add_argument("--clean-output", default=False, action="store_true")
     parser.add_argument("--split-amount-finetune", default=None, type=float,
                         help="Only used for logging, amount of data that was removed from the training set")
@@ -172,8 +170,8 @@ def parse_args(args=None):
     if args.split_amount_finetune is not None:
         args.split_amount_train = 1.0 - args.split_amount_finetune
 
-    if args.gpus is None:
-        args.gpus = 1 if torch.cuda.is_available() else 0
+    if args.device is None:
+        args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if args.output_dir is None:
         args.output_dir = os.path.join("output_dir", next(tempfile._get_candidate_names()))
@@ -213,7 +211,7 @@ def load_tokenizer(model_dir, data_dir):
     return schema_tokenizer
 
 
-def load_data(path, new_data_amount, old_data_amount, old_data_sampling_method, wandb_logger):
+def load_data(path, new_data_amount, old_data_amount, old_data_sampling_method):
     datasets = torch.load(path)
     finetune_dataset: nsp.PointerDataset = datasets["finetune_dataset"]
     if finetune_dataset is None:
@@ -225,7 +223,7 @@ def load_data(path, new_data_amount, old_data_amount, old_data_sampling_method, 
     if new_data_amount is not None and new_data_amount < 1.0:
         train_subset = utils.make_subset(train_subset, new_data_amount)
 
-    wandb_logger.log_hyperparams({"num_new_data": len(train_subset)})
+    wandb.config.update({"num_new_data": len(train_subset)})
 
     if old_data_amount > 0:
         if old_data_sampling_method == nsp.dataclasses.SamplingMethods.merge_subset:
@@ -267,161 +265,6 @@ def load_model(
     return model
 
 
-def load_trainer(checkpoint_path, args, wandb_logger):
-    """Load lightning Trainer from a checkpoint.
-
-    Restores optimizer and scheduler states, resets epoch and freezing schedule.
-    Parameters such as gradient_clip_val, gpus, accumulate_grad_batches, and reload_dataloaders_every_epoch
-    are overloaded if specified in args.
-
-    Args:
-        checkpoint_path: str, initialize Trainer from this checkpoint
-        args: argparse object from parse_args()
-        wandb_logger: lightning WandbLogger object
-    """
-    # there is a werid bug that checkpoint_callback creates checkpoints
-    # in the filepath subfolder, e.g. if you specify filepath=output_dir
-    # the checkpoints will be created in output_dir/..
-    # NOTE: we need save_top_k=1 fot checkpoint_callback.last_checkpoint_path
-    # to point to the best model
-    checkpoint_callback = nsp.callbacks.TransformersModelCheckpoint(
-        filepath=path_join(args.output_dir, "pl_checkpoint.ckpt"),
-        save_top_k=1,
-        verbose=False,
-        monitor="eval_exact_match",
-        mode="max",
-        prefix="",
-    )
-
-    early_stopping = False
-    if args.early_stopping is not None:
-        early_stopping = pl.callbacks.EarlyStopping(
-            monitor="eval_exact_match",
-            patience=args.early_stopping,
-            strict=False,
-            verbose=False,
-            mode="max",
-        )
-
-    lr_logger = pl.callbacks.LearningRateLogger()
-
-    # overload some of the Trainer arguments if they are provided to the script
-    reload = args.old_data_sampling_method == nsp.dataclasses.SamplingMethods.sample
-    trainer_kwargs = {
-        "gradient_clip_val": args.max_grad_norm,
-        "gpus": args.gpus,
-        "accumulate_grad_batches": args.gradient_accumulation_steps,
-        "reload_dataloaders_every_epoch": reload,
-    }
-    trainer_kwargs = {k: v for k, v in trainer_kwargs.items() if v is not None}
-
-    trainer = pl.Trainer(
-        resume_from_checkpoint=checkpoint_path,
-        logger=wandb_logger,
-        max_epochs=args.epochs,
-        min_epochs=args.min_epochs,
-        max_steps=args.max_steps,
-        min_steps=args.min_steps,
-        checkpoint_callback=checkpoint_callback,
-        early_stop_callback=early_stopping,
-        callbacks=[lr_logger],
-        row_log_interval=1,
-        limit_val_batches=args.eval_data_amount,
-        **trainer_kwargs,
-    )
-
-    return trainer
-
-
-def modify_checkpoint_for_retraining(
-    checkpoint_path,
-    output_dir,
-    lr=None,
-    weight_decay=None,
-    no_opt_state=False,
-    lightning_module=None,
-):
-    """Loads checkpoint file, modify it and save a modified checkpoint to output_dir
-
-    Args:
-        checkpoint_path: str, path to lightning checkpoint
-        output_dir: str, directory to save new checkpoint with name initial_checkpoint.pl
-        lr: dict, {'encoder_lr': float, 'decoder_lr': float}
-        weight_decay: float
-        no_opt_state: bool, whether to restore optimizer state or not
-        lightning_module: PointerModule
-
-    Returns:
-        A new checkpoint path
-    """
-    # A trick to start training from the global_step=0
-    # when still getting optimizer state and scheduler state restored
-    checkpoint = torch.load(checkpoint_path)
-
-    if no_opt_state:
-        optimizer = optimization.get_optimizers(
-            model=lightning_module.model,
-            learning_rate=lr or lightning_module.lr,
-            weight_decay=lightning_module.weight_decay,
-        )
-        checkpoint["optimizer_states"] = [optimizer.state_dict()]
-
-    # global_step will be incremented in .test call
-    # -1 is used to get metrics before the training
-    checkpoint["global_step"] = -1
-    checkpoint["epoch"] = -1
-
-    if weight_decay is not None:
-        # PointerModule has a single optimizer
-        optimization.set_weight_decay(
-            checkpoint["optimizer_states"][0]["param_groups"], weight_decay
-        )
-
-    os.makedirs(output_dir)
-    initial_checkpoint_path = path_join(output_dir, "initial_checkpoint.pl")
-    torch.save(checkpoint, initial_checkpoint_path)
-    return initial_checkpoint_path
-
-
-def load_lightning_module(
-    checkpoint_path: str,
-    model: nsp.EncoderDecoderWPointerModel,
-    train_dataset: nsp.PointerDataset,
-    eval_dataset: nsp.PointerDataset,
-    schema_tokenizer: nsp.TopSchemaTokenizer,
-    args: argparse.Namespace,
-    wandb_logger: pl.loggers.WandbLogger,
-):
-    """Loads lightning module with some of the parameters overwritten."""
-
-    wandb_logger.log_hyperparams({"new_classes": " ".join(args.new_classes)})
-
-    # Lightning loads all params which are not specified in .load_from_checkpoint
-    # thus, some arguments are only provided if we want to override the loaded values
-    module_kwargs = {
-        "lr": args.lr,
-        "weight_decay": args.weight_decay,
-        "log_every": args.log_every,
-        "batch_size": args.batch_size,
-    }
-    module_kwargs = {k: v for k, v in module_kwargs.items() if v is not None}
-
-    # always overwrite freezing schedule because global_step starts from zero
-    module_kwargs["freezing_schedule"] = nsp.dataclasses.EncDecFreezingSchedule.from_args(args)
-
-    lightning_module = nsp.PointerModule.load_from_checkpoint(
-        checkpoint_path,
-        model=model,
-        schema_tokenizer=schema_tokenizer,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        monitor_classes=args.new_classes,
-        **module_kwargs,
-    )
-
-    return lightning_module
-
-
 def average_checkpoints(new_model, args, save_to):
     old_model = load_model(
         args.model_dir, args.dropout, args.move_norm, args.move_norm_p, args.label_smoothing
@@ -440,8 +283,8 @@ def main(args):
     if os.path.exists(args.output_dir):
         raise ValueError(f"output_dir {args.output_dir} already exists")
 
-    wandb_logger = pl.loggers.WandbLogger(project=args.wandb_project, tags=args.tags)
-    wandb_logger.log_hyperparams(args)
+    mode = "disabled" if args.disable_wandb else None
+    wandb.init(project=args.wandb_project, tags=args.tags, config=args, mode=mode)
 
     logger.info(f"Starting finetuning with args: \n{pprint.pformat(vars(args))}")
 
@@ -454,16 +297,14 @@ def main(args):
         new_data_amount=args.new_data_amount,
         old_data_amount=args.old_data_amount,
         old_data_sampling_method=args.old_data_sampling_method,
-        wandb_logger=wandb_logger,
     )
     train_args = cli_utils.load_saved_args(path_join(args.model_dir, "args.toml"))
 
     # NOTE: do not log metrics as hyperparameters
-    wandb_logger.log_hyperparams(
+    wandb.config.update(
         {"pretrain_" + k: v for k, v in train_args.items() if k != "metrics"}
     )
-
-    wandb_logger.log_hyperparams({"num_total_data": len(train_dataset)})
+    wandb.config.update({"num_total_data": len(train_dataset)})
 
     logger.info("Loading model")
     model = load_model(
@@ -477,54 +318,62 @@ def main(args):
 
     logger.info("Preparing for training")
 
-    # NOTE: load_lightning_module loads a different checkpoint, we probably need to deal with that
-    lightning_module = load_lightning_module(
-        checkpoint_path=train_args["pl_checkpoint_path"],
+    max_tgt_len = train_args.get("max_tgt_len", 68)  # 68 is max_tgt_len for TOP
+    # this is not a lightning module anymore
+    freezing_schedule = nsp.dataclasses.EncDecFreezingSchedule.from_args(args)
+
+    lightning_module = nsp.PointerModule(
         model=model,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
         schema_tokenizer=schema_tokenizer,
-        args=args,
-        wandb_logger=wandb_logger,
+        train_dataset=train_dataset,
+        valid_dataset=eval_dataset,
+        lr=args.lr or train_args["lr"],
+        batch_size=args.batch_size or train_args["batch_size"],
+        warmup_steps=args.warmup_steps or train_args["warmup_steps"],
+        weight_decay=args.weight_decay or train_args["weight_decay"],
+        log_every=args.log_every or train_args["log_every"],
+        monitor_classes=args.new_classes or train_args["new_classes"],
+        freezing_schedule=freezing_schedule,
+        max_tgt_len=max_tgt_len,
+        no_lr_scheduler=getattr(args, "no_lr_scheduler", False),
     )
 
-    # override some of the parameters saved in the Trainer
-    checkpoint_path = modify_checkpoint_for_retraining(
-        train_args["pl_checkpoint_path"],
-        args.output_dir,
-        args.lr,
-        args.weight_decay,
-        args.no_opt_state,
-        lightning_module,
+    trainer = nsp.Trainer(
+        max_epochs=args.epochs,
+        min_epochs=args.min_epochs,
+        max_steps=args.max_steps,
+        min_steps=args.min_steps,
+        device=args.device,
+        gradient_clip_val=args.max_grad_norm,
+        early_stopping_metric="eval_exact_match",
+        patience=args.early_stopping,
+        maximize_early_stopping_metric=True,
+        limit_val_batches=args.eval_data_amount,
+        save_dir=args.output_dir,
     )
-    trainer = load_trainer(checkpoint_path, args, wandb_logger)
+
+    optimizer_and_scheduler = lightning_module.configure_optimizers()
+    optimizer_and_scheduler = trainer.load_optimizer_and_scheduler_states(optimizer_and_scheduler, args.model_dir)
 
     # get evaluation metrics of the initial model
     pretrain_metrics = train_args["metrics"]
     _first_step_metrics = {
-        "epoch": -1,
-        "global_step": -1,
+        "epoch": 0,
+        "global_step": 0,
         **pretrain_metrics["means"],
         **pretrain_metrics["stdevs"],
     }
-    wandb_logger.log_metrics(_first_step_metrics, step=-1)
-
-    wandb_logger.watch(lightning_module, log="all", log_freq=lightning_module.log_every)
+    wandb.log(_first_step_metrics)
+    wandb.watch(lightning_module, log="all", log_freq=lightning_module.log_every)
 
     # --- FIT
 
-    # call .test to load optimizer state
-    with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
-        trainer.test(lightning_module, lightning_module.val_dataloader(subset_size=0.01))
-
     cli_utils.check_config(lightning_module, trainer, args, strict=True)
-    # NOTE: trainer.test loads a different checkpoint, we probably need to deal with that
-    model.reset_initial_params()
 
-    if model.config.move_norm is not None:
+    if model.initial_params is not None:
         assert torch.allclose(model.get_move_norm(), torch.zeros(1, device=model.device))
 
-    trainer.fit(lightning_module)
+    trainer.fit(lightning_module, optimizer_and_scheduler)
 
     cli_utils.check_config(lightning_module, trainer, args, strict=True)
 
@@ -534,21 +383,20 @@ def main(args):
 
     logger.info("Training finished!")
 
-    best_model_checkpoint = trainer.checkpoint_callback.last_checkpoint_path
     if args.average_checkpoints:
-        average_checkpoints(model, args, save_to=os.path.dirname(best_model_checkpoint))
+        raise NotImplementedError("Average checkpoints is not supported anymore")
+        # average_checkpoints(model, args, save_to=os.path.dirname(best_model_checkpoint))
 
-    eval_dataloader = nsp.data.make_dataloader(eval_dataset, args.batch_size, schema_tokenizer.pad_token_id)
-    final_metrics, description = cli_utils.evaluate_model(
-        best_model_checkpoint,
+    final_metrics, description = cli_utils.evaluate_model_n_rounds(
+        trainer.model.model,
         schema_tokenizer,
-        eval_dataloader,
+        trainer.valid_dataloader,
         prefix="eval",
-        max_len=train_args.get("max_tgt_len", 68),  # 68 is max_tgt_len for TOP
+        max_len=max_tgt_len,
     )
 
     logger.info(description)
-    wandb_logger.log_metrics({**final_metrics["means"], **final_metrics["stdevs"]})
+    wandb.log({**final_metrics["means"], **final_metrics["stdevs"]})
 
     # Compute RI and RD
     class_weights = eval_dataset.get_class_frequencies(schema_tokenizer)
@@ -557,16 +405,14 @@ def main(args):
     finetuning_metrics = cli_utils.evaluate_finetuning_procedure(
         pretrain_metrics, final_metrics, class_weights
     )
-    wandb_logger.log_metrics(finetuning_metrics)
+    wandb.log(finetuning_metrics)
 
     # Compute RI and RD with very small outliers stuff
     finetuning_metrics0 = cli_utils.evaluate_finetuning_procedure(
         pretrain_metrics, final_metrics, class_weights, sigma=0.1
     )
     finetuning_metrics0 = {k + "_0.1": v for k, v in finetuning_metrics0.items()}
-    wandb_logger.log_metrics(finetuning_metrics0)
-
-    wandb_logger.close()
+    wandb.log(finetuning_metrics0)
 
     if args.clean_output:
         shutil.rmtree(args.output_dir)

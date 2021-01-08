@@ -16,7 +16,7 @@ import os
 import shutil
 import unittest
 
-from cli import preprocess, train_lightning, retrain
+from cli import preprocess, train, retrain
 
 
 DATA = "../data/top-dataset-semantic-parsing-1000"
@@ -160,8 +160,8 @@ class TestPreprocessCLI(unittest.TestCase):
             "1",
         ]
 
-        args = train_lightning.parse_args(args)
-        train_lightning.main(args)
+        args = train.parse_args(args)
+        train.main(args)
 
     @unittest.skipUnless(data_exists, skip_msg)
     def test04_retrain(self):
@@ -184,6 +184,7 @@ class TestPreprocessCLI(unittest.TestCase):
             "10",
             "--new-classes",
             "IN:GET_LOCATION,IN:GET_LOCATION_HOME,SL:POINT_ON_MAP,SL:CATEGORY_LOCATION",
+            "--disable-wandb",
         ]
 
         args = retrain.parse_args(args)
@@ -206,6 +207,7 @@ class TestPreprocessCLI(unittest.TestCase):
             f"{EPOCHS}",
             "--new-classes",
             "IN:GET_LOCATION,IN:GET_LOCATION_HOME,SL:POINT_ON_MAP,SL:CATEGORY_LOCATION",
+            "--disable-wandb",
         ]
 
         args = retrain.parse_args(args)
@@ -536,8 +538,8 @@ class TestPreprocessCLI(unittest.TestCase):
             "--track-grad-square",
         ]
 
-        args = train_lightning.parse_args(args)
-        train_lightning.main(args)
+        args = train.parse_args(args)
+        train.main(args)
 
     @unittest.skipUnless(data_exists, skip_msg)
     def test18_retrain_weight_consolidation(self):
