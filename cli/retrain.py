@@ -352,6 +352,7 @@ def main(args):
         save_dir=args.output_dir,
     )
 
+    lightning_module = lightning_module.to(args.device)  # required to load optimizer state to the correct device
     optimizer_and_scheduler = lightning_module.configure_optimizers()
     optimizer_and_scheduler = trainer.load_optimizer_and_scheduler_states(optimizer_and_scheduler, args.model_dir)
 
