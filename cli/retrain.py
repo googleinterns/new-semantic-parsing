@@ -409,9 +409,9 @@ def main(args):
 
     # Compute RI and RD with very small outliers stuff
     finetuning_metrics0 = cli_utils.evaluate_finetuning_procedure(
-        pretrain_metrics, final_metrics, class_weights, sigma=0.1
+        pretrain_metrics, final_metrics, class_weights, sigma=0.0
     )
-    finetuning_metrics0 = {k + "_0.1": v for k, v in finetuning_metrics0.items()}
+    finetuning_metrics0 = {k + "_0.0": v for k, v in finetuning_metrics0.items()}
     wandb.log(finetuning_metrics0)
 
     if args.clean_output:

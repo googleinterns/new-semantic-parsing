@@ -137,6 +137,7 @@ class Trainer:
                 if self.model.global_step > self.max_steps:
                     should_stop = True
                     break
+                wandb.log({"global_step": self.model.global_step, "epoch": self._epoch})
 
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 self.optimizer.zero_grad()
@@ -240,7 +241,9 @@ class Trainer:
                 eval_logs.append(eval_log)
 
             aggregated_eval_logs = self.model.validation_epoch_end(eval_logs)
+            # aggregated_eval_logs is a dict with a single key "log"
             self._maybe_save(aggregated_eval_logs["log"])
+            wandb.log(aggregated_eval_logs["log"])
 
         self.model.train()
         return self._should_stop_early(aggregated_eval_logs)

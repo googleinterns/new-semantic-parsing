@@ -1,6 +1,8 @@
 set -e
 cd ..
 
+export TOKENIZERS_PARALLELISM=false
+
 
 SET_NAME=path_99
 DATE=Jan8
