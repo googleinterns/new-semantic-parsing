@@ -23,6 +23,7 @@ CLASSES=SL:NAME_EVENT
 
 DATA=data-bin/"$SET_NAME"_"$DATE"
 MODEL=output_dir/"$SET_NAME"_"$DATE"
+FINETUNED="$MODEL"_finetuned
 BATCH_SIZE=112
 SPLIT=0.95
 
@@ -68,7 +69,7 @@ TAG="$SET_NAME"_"$DATE"_replay
 for old_data_amount in 0.0 0.05 0.1 0.15 0.2 0.5 0.7 1.0
 do
 
-    rm -rf output_dir/finetuned
+    rm -rf $FINETUNED
 
     python cli/retrain.py \
       --data-dir $DATA \
@@ -80,10 +81,9 @@ do
       --log-every 100 \
       --new-data-amount 1.0 \
       --old-data-amount $old_data_amount \
-      --weight-consolidation $ewc \
       --new-classes $CLASSES \
       --tags finetune,$TAG,ewc_"$ewc" \
-      --output-dir output_dir/finetuned \
+      --output-dir $FINETUNED \
       --old-data-sampling-method merge_subset \
 
 done
@@ -93,7 +93,7 @@ TAG="$SET_NAME"_"$DATE"_sample
 for old_data_amount in 0.0 0.05 0.1 0.15 0.2 0.5 0.7 1.0
 do
 
-    rm -rf output_dir/finetuned
+    rm -rf $FINETUNED
 
     python cli/retrain.py \
       --data-dir $DATA \
@@ -108,7 +108,7 @@ do
       --weight-consolidation $ewc \
       --new-classes $CLASSES \
       --tags finetune,$TAG,ewc_"$ewc" \
-      --output-dir output_dir/finetuned \
+      --output-dir $FINETUNED \
       --old-data-sampling-method sample \
 
 done
@@ -122,7 +122,7 @@ do
 for ewc in 10 100
 do
 
-    rm -rf output_dir/finetuned
+    rm -rf $FINETUNED
 
     python cli/retrain.py \
       --data-dir $DATA \
@@ -137,7 +137,7 @@ do
       --weight-consolidation $ewc \
       --new-classes $CLASSES \
       --tags finetune,$TAG,ewc_"$ewc" \
-      --output-dir output_dir/finetuned \
+      --output-dir $FINETUNED \
       --old-data-sampling-method merge_subset \
 
 done
@@ -151,7 +151,7 @@ do
 
     ewc=10
 
-    rm -rf output_dir/finetuned
+    rm -rf $FINETUNED
 
     python cli/retrain.py \
       --data-dir $DATA \
@@ -166,7 +166,7 @@ do
       --weight-consolidation $ewc \
       --new-classes $CLASSES \
       --tags finetune,$TAG,ewc_"$ewc" \
-      --output-dir output_dir/finetuned \
+      --output-dir $FINETUNED \
       --old-data-sampling-method sample \
 
 done
@@ -180,7 +180,7 @@ do
 for move_norm in 0.05 0.1
 do
 
-    rm -rf output_dir/finetuned
+    rm -rf $FINETUNED
 
     python cli/retrain.py \
       --data-dir $DATA \
@@ -195,7 +195,7 @@ do
       --move-norm $move_norm \
       --new-classes $CLASSES \
       --tags finetune,$TAG,move_norm_"$move_norm" \
-      --output-dir output_dir/finetuned \
+      --output-dir $FINETUNED \
       --old-data-sampling-method merge_subset \
 
 done
