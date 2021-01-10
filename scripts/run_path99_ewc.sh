@@ -10,7 +10,7 @@ CLASSES=SL:PATH
 
 DATA=data-bin/"$SET_NAME"_"$DATE"
 MODEL=output_dir/"$SET_NAME"_"$DATE"_bert_run
-BATCH_SIZE=128
+BATCH_SIZE=112
 
 
 python cli/preprocess.py \

@@ -11,6 +11,8 @@ MODEL=output_dir/"$SET_NAME"_"$DATE"
 BATCH_SIZE=112
 SPLIT=0.95
 
+export TOKENIZERS_PARALLELISM=false
+
 
 python cli/preprocess.py \
   --data data/top-dataset-semantic-parsing \
