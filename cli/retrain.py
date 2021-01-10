@@ -301,9 +301,7 @@ def main(args):
     train_args = cli_utils.load_saved_args(path_join(args.model_dir, "args.toml"))
 
     # NOTE: do not log metrics as hyperparameters
-    wandb.config.update(
-        {"pretrain_" + k: v for k, v in train_args.items() if k != "metrics"}
-    )
+    wandb.config.update({"pretrain_" + k: v for k, v in train_args.items() if k != "metrics"})
     wandb.config.update({"num_total_data": len(train_dataset)})
 
     logger.info("Loading model")
@@ -352,9 +350,13 @@ def main(args):
         save_dir=args.output_dir,
     )
 
-    lightning_module = lightning_module.to(args.device)  # required to load optimizer state to the correct device
+    lightning_module = lightning_module.to(
+        args.device
+    )  # required to load optimizer state to the correct device
     optimizer_and_scheduler = lightning_module.configure_optimizers()
-    optimizer_and_scheduler = trainer.load_optimizer_and_scheduler_states(optimizer_and_scheduler, args.model_dir)
+    optimizer_and_scheduler = trainer.load_optimizer_and_scheduler_states(
+        optimizer_and_scheduler, args.model_dir
+    )
 
     # get evaluation metrics of the initial model
     pretrain_metrics = train_args["metrics"]
@@ -364,7 +366,7 @@ def main(args):
         **pretrain_metrics["means"],
         **pretrain_metrics["stdevs"],
     }
-    wandb.log(_first_step_metrics)
+    wandb.log(_first_step_metrics, step=0)
     wandb.watch(lightning_module, log="all", log_freq=lightning_module.log_every)
 
     # --- FIT
@@ -397,7 +399,9 @@ def main(args):
     )
 
     logger.info(description)
-    wandb.log({**final_metrics["means"], **final_metrics["stdevs"]})
+    wandb.log(
+        {**final_metrics["means"], **final_metrics["stdevs"]}, step=trainer.model.global_step
+    )
 
     # Compute RI and RD
     class_weights = eval_dataset.get_class_frequencies(schema_tokenizer)
@@ -406,14 +410,14 @@ def main(args):
     finetuning_metrics = cli_utils.evaluate_finetuning_procedure(
         pretrain_metrics, final_metrics, class_weights
     )
-    wandb.log(finetuning_metrics)
+    wandb.log(finetuning_metrics, step=trainer.model.global_step)
 
     # Compute RI and RD with very small outliers stuff
     finetuning_metrics0 = cli_utils.evaluate_finetuning_procedure(
         pretrain_metrics, final_metrics, class_weights, sigma=0.0
     )
     finetuning_metrics0 = {k + "_0.0": v for k, v in finetuning_metrics0.items()}
-    wandb.log(finetuning_metrics0)
+    wandb.log(finetuning_metrics0, step=trainer.model.global_step)
 
     if args.clean_output:
         shutil.rmtree(args.output_dir)

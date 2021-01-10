@@ -538,7 +538,9 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         Call this function before training the model if you want to later fine-tune the model with EWC.
         During training exponential mean of the grad squares is stored in these buffers.
         """
-        self.grad_squared = ParamsBufferHolder({n: torch.zeros_like(p) for n, p in self.named_parameters()})
+        self.grad_squared = ParamsBufferHolder(
+            {n: torch.zeros_like(p) for n, p in self.named_parameters()}
+        )
 
     def update_grad_squared(self):
         """
@@ -576,8 +578,10 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
             self.grad_squared.set(name, _new_grad2)
 
         if not has_grad:
-            raise RuntimeError("You should .backward before calling .update_grad_squared. "
-                               "All parameters currently have None gradient.")
+            raise RuntimeError(
+                "You should .backward before calling .update_grad_squared. "
+                "All parameters currently have None gradient."
+            )
 
     def finalize_grad_squared(self):
         """Divides the accumulated grad_squared by the number of training steps
@@ -585,9 +589,11 @@ class EncoderDecoderWPointerModel(transformers.PreTrainedModel):
         Only use this ones right after the training and only use it on models that track trad square
         """
         if self._is_finalized:
-            raise RuntimeError("finalize_grad_squared called on a model that does not need finalization. "
-                               "The grad_squared was either normalized already or the model does not need finalization "
-                               "because it does not track grad_squared")
+            raise RuntimeError(
+                "finalize_grad_squared called on a model that does not need finalization. "
+                "The grad_squared was either normalized already or the model does not need finalization "
+                "because it does not track grad_squared"
+            )
 
         for name, grad2 in self.grad_squared.items():
             normalized_grad2 = grad2 / self._n_steps

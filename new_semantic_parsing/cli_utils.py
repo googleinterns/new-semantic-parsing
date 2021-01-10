@@ -73,7 +73,7 @@ def evaluate_model_n_rounds(
     folds = _get_kfold_subsets(pred_tokens, true_tokens, n_rounds)
 
     for fold, (predictions_subset, labels_subset) in enumerate(folds):
-        logger.info("Computing metrics for the fold {fold}")
+        logger.info(f"Computing metrics for the fold {fold}")
         _final_metrics = nsp.metrics.get_metrics(
             predictions_subset,
             labels_subset,
@@ -417,7 +417,12 @@ def average_models(
 
 
 def make_lightning_module(
-    model, schema_tokenizer, train_dataset, eval_dataset, max_tgt_len, args,
+    model,
+    schema_tokenizer,
+    train_dataset,
+    eval_dataset,
+    max_tgt_len,
+    args,
 ):
     freezing_schedule = nsp.dataclasses.EncDecFreezingSchedule.from_args(args)
 

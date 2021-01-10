@@ -31,6 +31,7 @@ class ParamsBufferHolder(nn.Module):
         ParamsBufferHolder(my_module.named_parameters())
 
     """
+
     def __init__(self, named_params, buffer_name_prefix=""):
         super().__init__()
 

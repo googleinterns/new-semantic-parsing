@@ -356,7 +356,7 @@ def main(args):
         }
         toml.dump(args_dict, f)
 
-    wandb.log({**final_metrics["means"], **final_metrics["stdevs"]})
+    wandb.log({**final_metrics["means"], **final_metrics["stdevs"]}, step=trainer.model.global_step)
     logger.info("Finished")
 
 

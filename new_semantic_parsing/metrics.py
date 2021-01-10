@@ -144,8 +144,10 @@ class Tree:
         inside_slot = inside_slot or entity_type == SL
         while i < len(tokens):
             if safety <= 0:
-                raise RuntimeError("The sequence is too long (>1000 tokens) or "
-                                   "there is a bug in the tree building function.")
+                raise RuntimeError(
+                    "The sequence is too long (>1000 tokens) or "
+                    "there is a bug in the tree building function."
+                )
             safety -= 1
             token = tokens[i]
 
@@ -205,7 +207,13 @@ class Tree:
 
 
 def get_metrics(
-    pred_tokens, true_tokens, monitor_classes, prefix, schema_tokenizer, do_each=False, verbose=False,
+    pred_tokens,
+    true_tokens,
+    monitor_classes,
+    prefix,
+    schema_tokenizer,
+    do_each=False,
+    verbose=False,
 ):
     """Computes exact_match and tree-based metrics
 
@@ -235,7 +243,12 @@ def get_metrics(
     exact_match /= len(true_tokens)
 
     tree_metrics = get_tree_path_metrics(
-        pred_tokens, true_tokens, monitor_classes, prefix, do_each, verbose=verbose,
+        pred_tokens,
+        true_tokens,
+        monitor_classes,
+        prefix,
+        do_each,
+        verbose=verbose,
     )
 
     pred_strs = [schema_tokenizer.detokenize(p) for p in pred_tokens]
@@ -255,7 +268,9 @@ def get_metrics(
 # Tree path scores
 
 
-def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_each=False, verbose=False):
+def get_tree_path_metrics(
+    pred_tokens, true_tokens, monitor_classes, prefix, do_each=False, verbose=False
+):
     """Gets metrics for all classes, for monitor classes and for monitor_classes[0].
 
     Apply prefix to all keys.
@@ -279,11 +294,15 @@ def get_tree_path_metrics(pred_tokens, true_tokens, monitor_classes, prefix, do_
     if verbose:
         logger.info("Computing tree path scores.")
 
-    tree_path_scores = get_tree_path_scores(pred_tokens=pred_tokens, true_tokens=true_tokens, verbose=verbose)
+    tree_path_scores = get_tree_path_scores(
+        pred_tokens=pred_tokens, true_tokens=true_tokens, verbose=verbose
+    )
     tree_path_scores = {f"{prefix}_{k}": v for k, v in tree_path_scores.items()}
 
     if verbose:
-        logger.info("Finished computing tree path scores overall. Starting to compute per-class scores.")
+        logger.info(
+            "Finished computing tree path scores overall. Starting to compute per-class scores."
+        )
 
     if monitor_classes is not None:
 

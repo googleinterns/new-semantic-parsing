@@ -78,11 +78,11 @@ class Trainer:
         min_steps=0,
         max_steps=None,
         limit_val_batches=1.0,
-        save_dir='checkpoint_dir',
+        save_dir="checkpoint_dir",
     ):
         self.max_epochs = max_epochs
         self.min_epochs = min_epochs or 0
-        self.max_steps = max_steps or float('inf')
+        self.max_steps = max_steps or float("inf")
         self.min_steps = min_steps or 0
 
         self.device = device
@@ -94,7 +94,7 @@ class Trainer:
         self.maximize_early_stopping_metric = maximize_early_stopping_metric
         self.patience = patience or self.max_epochs
         self._current_patience = 0
-        self._best_metric = float('-inf') if maximize_early_stopping_metric else float('inf')
+        self._best_metric = float("-inf") if maximize_early_stopping_metric else float("inf")
 
         self.model = None
         self.optimizer = None
@@ -137,7 +137,10 @@ class Trainer:
                 if self.model.global_step > self.max_steps:
                     should_stop = True
                     break
-                wandb.log({"global_step": self.model.global_step, "epoch": self._epoch})
+                wandb.log(
+                    {"global_step": self.model.global_step, "epoch": self._epoch},
+                    step=self.model.global_step,
+                )
 
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 self.optimizer.zero_grad()
@@ -146,9 +149,9 @@ class Trainer:
                 loss = training_step_dict["loss"]
 
                 if "log" in training_step_dict:
-                    wandb.log(training_step_dict["log"])
+                    wandb.log(training_step_dict["log"], step=self.model.global_step)
                 if "aggregate_log" in training_step_dict:
-                    wandb.log(training_step_dict["aggregate_log"])
+                    wandb.log(training_step_dict["aggregate_log"], step=self.model.global_step)
 
                 loss.backward()
                 self.model.on_after_backward()
@@ -220,7 +223,9 @@ class Trainer:
             if checkpoint["scheduler_state_dict"] is not None:
                 scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
             else:
-                logger.warning("Scheduler state in the checkpoint is empty. Continuing with the current state.")
+                logger.warning(
+                    "Scheduler state in the checkpoint is empty. Continuing with the current state."
+                )
 
         return optimizer, scheduler
 
@@ -243,7 +248,7 @@ class Trainer:
             aggregated_eval_logs = self.model.validation_epoch_end(eval_logs)
             # aggregated_eval_logs is a dict with a single key "log"
             self._maybe_save(aggregated_eval_logs["log"])
-            wandb.log(aggregated_eval_logs["log"])
+            wandb.log(aggregated_eval_logs["log"], step=self.model.global_step)
 
         self.model.train()
         return self._should_stop_early(aggregated_eval_logs)
@@ -272,7 +277,9 @@ class Trainer:
 
             if isinstance(optimizer_list, list):
                 if len(optimizer_list) != 1:
-                    raise ValueError(f"Only a single optimizer is supported, got {len(optimizer_list)} instead")
+                    raise ValueError(
+                        f"Only a single optimizer is supported, got {len(optimizer_list)} instead"
+                    )
                 optimizer = optimizer_list[0]
 
             elif isinstance(optimizer_list, torch.optim.Optimizer):
@@ -283,7 +290,9 @@ class Trainer:
 
             if isinstance(scheduler_list, list):
                 if len(scheduler_list) != 1:
-                    raise ValueError(f"Only a single lr scheduler is supported, got {len(scheduler_list)} instead")
+                    raise ValueError(
+                        f"Only a single lr scheduler is supported, got {len(scheduler_list)} instead"
+                    )
                 scheduler = scheduler_list[0]
 
                 if isinstance(scheduler, dict):
@@ -301,12 +310,18 @@ class Trainer:
             return optimizer_and_scheduler, None
 
     def _should_stop_early(self, validation_metrics):
-        if self.early_stopping_metric is None or self.min_epochs < self._epoch or self.min_steps < self.model.global_step:
+        if (
+            self.early_stopping_metric is None
+            or self.min_epochs < self._epoch
+            or self.min_steps < self.model.global_step
+        ):
             return
 
         if self.early_stopping_metric not in validation_metrics:
-            raise ValueError(f"Metric {self.early_stopping_metric} used for early stopping"
-                             f" is not found in validation metrics")
+            raise ValueError(
+                f"Metric {self.early_stopping_metric} used for early stopping"
+                f" is not found in validation metrics"
+            )
 
         metric = validation_metrics[self.early_stopping_metric]
 
@@ -327,8 +342,10 @@ class Trainer:
             self.save()
 
         if self.early_stopping_metric not in validation_metrics:
-            raise ValueError(f"Metric {self.early_stopping_metric} used for early stopping"
-                             f" is not found in validation metrics. Validation metrics: {validation_metrics.keys()}")
+            raise ValueError(
+                f"Metric {self.early_stopping_metric} used for early stopping"
+                f" is not found in validation metrics. Validation metrics: {validation_metrics.keys()}"
+            )
 
         metric = validation_metrics[self.early_stopping_metric]
 

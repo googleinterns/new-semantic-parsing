@@ -18,8 +18,9 @@ from typing import Union, Dict
 
 import torch
 import torch.nn as nn
-
 from torch.utils.data import DataLoader
+
+import wandb
 
 import new_semantic_parsing.optimization as opt
 from new_semantic_parsing import metrics, data, config
@@ -118,6 +119,14 @@ class PointerModule(nn.Module):
 
         if self.freezing_schedule is not None:
             self._freezer_step()
+
+        # return initial move norm before the first update as a sanity check
+        if self.log_every == 0 and self.model.initial_params is not None:
+            move_norm = self.model.get_move_norm()
+            if wandb.run is not None and move_norm > 1e-7:
+                wandb.alert(f"nonzero move norm={move_norm} in the beginning of training")
+
+            return {"loss": loss, "log": {"loss": loss, "move_norm": move_norm}}
 
         # if not logging, return loss
         if self.log_every == 0 or (self.global_step % self.log_every != 0):

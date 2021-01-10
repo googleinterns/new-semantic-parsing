@@ -304,33 +304,3 @@ class SampleConcatSubset(torch.utils.data.Dataset):
 
     def __getitem__(self, item):
         return self._data[item]
-
-
-def make_dataloader(dataset: PointerDataset, batch_size, pad_token_id, shuffle=False, num_workers=config.NUM_WORKERS):
-    """Creates dataloader with a Seq2SeqDataCollator
-
-    Args:
-        dataset: PointerDataset
-        batch_size: batch size
-        pad_token_id: padding token id for the collator
-        shuffle: whether to shuffle examples from the dataset
-        num_workers: number of threads in dataloader
-
-    Returns:
-        torch Dataloader
-    """
-    collator = Seq2SeqDataCollator(
-        pad_id=pad_token_id,
-        decoder_pad_id=pad_token_id,
-    )
-
-    loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=True,
-        shuffle=shuffle,
-        collate_fn=collator.collate_batch,
-    )
-
-    return loader
