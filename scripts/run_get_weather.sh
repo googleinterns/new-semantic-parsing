@@ -33,7 +33,7 @@ export TOKENIZERS_PARALLELISM=false
 
 
 python cli/preprocess.py \
-  --data data/top-dataset-semantic-parsing \
+  --data data/snips/top_format \
   --text-tokenizer bert-base-cased \
   --output-dir $DATA \
   --split-class $CLASSES \
