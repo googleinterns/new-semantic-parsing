@@ -82,7 +82,7 @@ do
       --new-data-amount 1.0 \
       --old-data-amount $old_data_amount \
       --new-classes $CLASSES \
-      --tags finetune,$TAG,ewc_"$ewc" \
+      --tags finetune,$TAG \
       --output-dir $FINETUNED \
       --old-data-sampling-method merge_subset \
 
@@ -105,16 +105,15 @@ do
       --log-every 100 \
       --new-data-amount 1.0 \
       --old-data-amount $old_data_amount \
-      --weight-consolidation $ewc \
       --new-classes $CLASSES \
-      --tags finetune,$TAG,ewc_"$ewc" \
+      --tags finetune,$TAG \
       --output-dir $FINETUNED \
       --old-data-sampling-method sample \
 
 done
 
 
-TAG="$SET_NAME"_"$DATE"_ewc
+TAG="$SET_NAME"_"$DATE"_ewc_replay
 
 for old_data_amount in 0.0 0.05 0.1 0.15 0.2 0.5 0.7 1.0
 do
@@ -149,7 +148,8 @@ TAG="$SET_NAME"_"$DATE"_ewc_sample
 for old_data_amount in 0.0 0.05 0.1 0.2 0.5
 do
 
-    ewc=10
+for ewc in 10 100
+do
 
     rm -rf $FINETUNED
 
@@ -169,6 +169,7 @@ do
       --output-dir $FINETUNED \
       --old-data-sampling-method sample \
 
+done
 done
 
 
