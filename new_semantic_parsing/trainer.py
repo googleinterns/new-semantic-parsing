@@ -30,7 +30,7 @@ import torch
 import wandb
 
 
-from new_semantic_parsing import PointerModule
+from new_semantic_parsing import data,  PointerModule
 
 
 logging.basicConfig(
@@ -167,6 +167,10 @@ class Trainer:
             if should_stop_early:
                 logger.info("Early stopping condition. Interrupting the training...")
                 break
+
+        # Resample if using the sample dataset
+        if isinstance(self.model.train_dataset, data.SampleConcatSubset):
+            self.model.train_dataset.resample()
 
         logger.info("Training has finished")
 
