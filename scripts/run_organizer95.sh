@@ -3,55 +3,81 @@ cd ..
 
 
 SET_NAME=organizer_95
-DATE=Dec16_2
+DATE=Jan9
 CLASSES=SL:ORGANIZER_EVENT
 
-DATA=data-bin/"$SET_NAME"_Dec7
+DATA=data-bin/"$SET_NAME"_"$DATE"
 MODEL=output_dir/"$SET_NAME"_"$DATE"
-BATCH_SIZE=128
+BATCH_SIZE=112
 SPLIT=0.95
 
-
-#python cli/preprocess.py \
-#  --data data/top-dataset-semantic-parsing \
-#  --text-tokenizer bert-base-cased \
-#  --output-dir $DATA \
-#  --split-class $CLASSES \
-#  --split-amount $SPLIT \
+export TOKENIZERS_PARALLELISM=false
 
 
-#python cli/train.py \
-#  --data-dir $DATA  \
-#  --encoder-model bert-base-cased \
-#  --decoder-lr 0.2 \
-#  --encoder-lr 0.02 \
-#  --batch-size $BATCH_SIZE \
-#  --layers 4 \
-#  --hidden 256 \
-#  --dropout 0.2 \
-#  --heads 4 \
-#  --label-smoothing 0.0 \
-#  --epochs 100 \
-#  --warmup-steps 1500 \
-#  --freeze-encoder 0 \
-#  --unfreeze-encoder 500 \
-#  --log-every 150 \
-#  --early-stopping 10 \
-#  --output-dir $MODEL \
-#  --tags train,$TAG \
-#  --new-classes $CLASSES \
-#  --track-grad-square \
-#  --seed 1 \
+python cli/preprocess.py \
+  --data data/top-dataset-semantic-parsing \
+  --text-tokenizer bert-base-cased \
+  --output-dir $DATA \
+  --split-class $CLASSES \
+  --split-amount $SPLIT \
+
+TAG="$SET_NAME"_"$DATE"
+
+python cli/train.py \
+  --data-dir $DATA  \
+  --encoder-model bert-base-cased \
+  --decoder-lr 0.2 \
+  --encoder-lr 0.02 \
+  --batch-size $BATCH_SIZE \
+  --layers 4 \
+  --hidden 256 \
+  --dropout 0.2 \
+  --heads 4 \
+  --label-smoothing 0.0 \
+  --epochs 100 \
+  --early-stopping 10 \
+  --warmup-steps 1500 \
+  --freeze-encoder 0 \
+  --unfreeze-encoder 500 \
+  --log-every 150 \
+  --output-dir $MODEL \
+  --tags train,$TAG \
+  --new-classes $CLASSES \
+  --track-grad-square \
+  --seed 1 \
 
 
-TAG="$SET_NAME"_"$DATE"_ewc_find
-# path_99_Aug19_bert_run_baseline
+TAG="$SET_NAME"_"$DATE"_replay
 
-
-for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
+for old_data_amount in 0.0 0.05 0.1 0.2 0.5 0.7 1.0
 do
 
-for ewc in 1000000 0 100000 10000 1000
+    rm -rf output_dir/finetuned
+
+    python cli/retrain.py \
+      --data-dir $DATA \
+      --model-dir $MODEL \
+      --batch-size $BATCH_SIZE \
+      --dropout 0.2 \
+      --epochs 50 \
+      --early-stopping 10 \
+      --log-every 100 \
+      --new-data-amount 1.0 \
+      --old-data-amount $old_data_amount \
+      --new-classes $CLASSES \
+      --tags finetune,$TAG,ewc_"$ewc" \
+      --output-dir output_dir/finetuned \
+      --old-data-sampling-method sample \
+
+done
+
+
+TAG="$SET_NAME"_"$DATE"_ewc_replay
+
+for old_data_amount in 0.0 0.05 0.1 0.2 0.5
+do
+
+for ewc in 100 1000
 do
 
     rm -rf output_dir/finetuned
@@ -70,18 +96,18 @@ do
       --new-classes $CLASSES \
       --tags finetune,$TAG,ewc_"$ewc" \
       --output-dir output_dir/finetuned \
-
+      --old-data-sampling-method merge_subset \
 
 done
 done
 
 
-# baseline
-TAG="$SET_NAME"_"$DATE"_baseline
+# dropout
+TAG="$SET_NAME"_"$DATE"_higher_dropout
 # path_99_Aug19_bert_run_baseline
 
 
-for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
+for old_data_amount in 0.0 0.05 0.1 0.2 0.5
 do
 
     rm -rf output_dir/finetuned
@@ -90,7 +116,7 @@ do
       --data-dir $DATA \
       --model-dir $MODEL \
       --batch-size $BATCH_SIZE \
-      --dropout 0.2 \
+      --dropout 0.4 \
       --epochs 50 \
       --early-stopping 20 \
       --log-every 100 \
@@ -104,11 +130,9 @@ do
 done
 
 
-# sample
 TAG="$SET_NAME"_"$DATE"_sample
 
-
-for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
+for old_data_amount in 0.0 0.05 0.1 0.2 0.5 0.7 1.0
 do
 
     rm -rf output_dir/finetuned
@@ -119,26 +143,24 @@ do
       --batch-size $BATCH_SIZE \
       --dropout 0.2 \
       --epochs 50 \
-      --early-stopping 20 \
+      --early-stopping 10 \
       --log-every 100 \
       --new-data-amount 1.0 \
       --old-data-amount $old_data_amount \
-      --old-data-sampling-method sample \
       --new-classes $CLASSES \
-      --tags finetune,$TAG \
+      --tags finetune,$TAG,ewc_"$ewc" \
       --output-dir output_dir/finetuned \
-
+      --old-data-sampling-method sample \
 
 done
 
-TAG="$SET_NAME"_"$DATE"_ewc_find_sample
-# path_99_Aug19_bert_run_baseline
 
+TAG="$SET_NAME"_"$DATE"_ewc_sample
 
-for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
+for old_data_amount in 0.0 0.05 0.1 0.2 0.5 0.7 1.0
 do
 
-for ewc in 1000000 0 100000 10000 1000
+for ewc in 100 1000
 do
 
     rm -rf output_dir/finetuned
@@ -159,15 +181,16 @@ do
       --output-dir output_dir/finetuned \
       --old-data-sampling-method sample \
 
-
 done
 done
 
 
-# move norm 0.05
-TAG="$SET_NAME"_"$DATE"_move_norm
+TAG="$SET_NAME"_"$DATE"_move_norm_fixed
 
-for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
+for old_data_amount in 0.0 0.05 0.1 0.2 0.5
+do
+
+for move_norm in 0.01 0.1
 do
 
     rm -rf output_dir/finetuned
@@ -177,71 +200,16 @@ do
       --model-dir $MODEL \
       --batch-size $BATCH_SIZE \
       --dropout 0.2 \
-      --move-norm 0.1 \
       --epochs 50 \
       --early-stopping 10 \
       --log-every 100 \
       --new-data-amount 1.0 \
       --old-data-amount $old_data_amount \
+      --move-norm $move_norm \
       --new-classes $CLASSES \
-      --tags finetune,$TAG \
+      --tags finetune,$TAG,move_norm_"$move_norm" \
       --output-dir output_dir/finetuned \
-
-
-done
-
-# freeze encoder
-TAG="$SET_NAME"_"$DATE"_freeze
-
-for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
-do
-
-    rm -rf output_dir/finetuned
-
-    python cli/retrain.py \
-      --data-dir $DATA \
-      --model-dir $MODEL \
-      --batch-size $BATCH_SIZE \
-      --dropout 0.2 \
-      --freeze-encoder 0 \
-      --epochs 50 \
-      --early-stopping 10 \
-      --log-every 100 \
-      --new-data-amount 1.0 \
-      --old-data-amount $old_data_amount \
-      --new-classes $CLASSES \
-      --tags finetune,$TAG \
-      --output-dir output_dir/finetuned \
-
-
-done
-
-
-# new data
-TAG="$SET_NAME"_"$DATE"_new_data
-
-
-for old_data_amount in 0.0 0.01 0.05 0.1 0.15 0.2 0.3 0.5 0.7 1.0
-do
-for new_data_amount in 0.1 0.3 0.5 0.7 1.0
-do
-
-    rm -rf output_dir/finetuned
-
-    python cli/retrain.py \
-      --data-dir $DATA \
-      --model-dir $MODEL \
-      --batch-size $BATCH_SIZE \
-      --dropout 0.2 \
-      --epochs 50 \
-      --early-stopping 20 \
-      --log-every 100 \
-      --new-data-amount $new_data_amount \
-      --old-data-amount $old_data_amount \
-      --old-data-sampling-method sample \
-      --new-classes $CLASSES \
-      --tags finetune,$TAG \
-      --output-dir output_dir/finetuned \
+      --old-data-sampling-method merge_subset \
 
 done
 done
